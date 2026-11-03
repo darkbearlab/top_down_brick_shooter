@@ -27,7 +27,7 @@ const STAT_ROWS = [
   { key: 'mag', label: '彈匣', max: 75, better: 'high', fmt: v => v.toFixed(0) },
   { key: 'reload', label: '換彈', max: 3, better: 'low', fmt: v => v.toFixed(2) + 's' },
   { key: 'kick', label: '後座力', max: 10, better: 'low', fmt: v => v.toFixed(1) + '°' },
-  { key: 'turn', label: '轉向', max: 900, better: 'high', fmt: v => v.toFixed(0) + '°/s' },
+  { key: 'turn', label: '轉向', max: 1100, better: 'high', fmt: v => v.toFixed(0) + '°/s' },
   { key: 'weight', label: '重量', max: 7, better: 'low', fmt: v => v.toFixed(1) },
 ];
 

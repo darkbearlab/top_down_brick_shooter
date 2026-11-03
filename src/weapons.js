@@ -17,7 +17,7 @@ export const CALIBERS = {
 export const RECEIVERS = {
   pistol: {
     name: '手槍', caliber: '9mm', desc: '輕、甩槍快、射速慢',
-    fireInterval: 0.15, kick: 4, turn: 720, reload: 0.9, mag: 13, weight: 0.8, spread: 0.04, damage: 1, range: 0.9,
+    fireInterval: 0.15, kick: 4, turn: 900, reload: 0.9, mag: 13, weight: 0.8, spread: 0.04, damage: 1, range: 0.9,
     compact: true, noSlots: ['stock', 'grip'],
     sockets: { barrel: { z: 6, y: 2 }, mag: { z: -2, y: -5 } },
     shape(s) {
@@ -29,7 +29,7 @@ export const RECEIVERS = {
   },
   smg: {
     name: '衝鋒槍', caliber: '9mm', desc: '射速快、後座小、射程短',
-    fireInterval: 0.07, kick: 2.2, turn: 520, reload: 1.3, mag: 25, weight: 2, spread: 0.09, damage: 0.95, range: 1,
+    fireInterval: 0.07, kick: 2.2, turn: 680, reload: 1.3, mag: 25, weight: 2, spread: 0.09, damage: 0.95, range: 1,
     sockets: { stock: { z: -4, y: 1 }, barrel: { z: 8, y: 1 }, mag: { z: 4, y: 0 } },
     shape(s) {
       s.box(-1, 0, -4, 2, 4, 12, 'metal');
@@ -40,7 +40,7 @@ export const RECEIVERS = {
   },
   carbine: {
     name: '卡賓槍', caliber: '556', desc: '全能型',
-    fireInterval: 0.1, kick: 2.4, turn: 400, reload: 1.5, mag: 30, weight: 3, spread: 0.05, damage: 1, range: 1,
+    fireInterval: 0.1, kick: 2.4, turn: 540, reload: 1.5, mag: 30, weight: 3, spread: 0.05, damage: 1, range: 1,
     sockets: { stock: { z: -5, y: 1 }, barrel: { z: 9, y: 1 }, mag: { z: 3, y: 0 } },
     shape(s) {
       s.box(-1, 0, -5, 2, 4, 14, 'metal');
@@ -51,7 +51,7 @@ export const RECEIVERS = {
   },
   dmr: {
     name: '精確射手步槍', caliber: '556', desc: '高威力、遠射程、射速慢、轉向慢',
-    fireInterval: 0.26, kick: 6, turn: 280, reload: 1.7, mag: 15, weight: 4, spread: 0.015, damage: 1.65, range: 1.35,
+    fireInterval: 0.26, kick: 6, turn: 400, reload: 1.7, mag: 15, weight: 4, spread: 0.015, damage: 1.65, range: 1.35,
     sockets: { stock: { z: -6, y: 1 }, barrel: { z: 10, y: 1 }, mag: { z: 3, y: 0 } },
     shape(s) {
       s.box(-1, 0, -6, 2, 4, 16, 'metal');

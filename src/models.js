@@ -53,18 +53,29 @@ export function makeBlockMan({ skin = 0xf0c9a0, shirt, pants = 0x2b2f3a, boots =
   back.rotation.set(-Math.PI / 2 + 0.25, 0, 0.7);
   body.add(back);
 
-  return { root, body, torso, head, legL, legR, armL, armR, gun, back, mats, walk: 0 };
+  return { root, body, torso, head, legL, legR, armL, armR, gun, back, mats, walk: 0, hand: 1 };
 }
 
-// 走路 + 舉槍姿勢
+// 持槍手：1 = 右手、-1 = 左手；手上的槍和背上的槍左右對調
+export function setHand(m, hand) {
+  m.hand = hand;
+  m.gun.position.x = 0.2 * hand;
+  m.back.position.x = -0.05 * hand;
+  m.back.rotation.z = 0.7 * hand;
+}
+
+// 走路 + 舉槍姿勢；拿著槍的那隻手固定握槍，不跟著走路擺動
 export function animateMan(m, speed01, dt, aiming) {
   m.walk += dt * (4 + 9 * speed01) * (speed01 > 0.05 ? 1 : 0);
   const sw = Math.sin(m.walk) * 0.7 * speed01;
   m.legL.rotation.x = sw;
   m.legR.rotation.x = -sw;
-  m.armL.rotation.x = aiming ? -1.25 : -sw * 0.8;
-  m.armR.rotation.x = aiming ? -1.45 : sw * 0.8;
-  m.armL.rotation.z = aiming ? -0.35 : 0;
+  const holding = m.gun.children.length > 0;
+  const [gunArm, offArm, offSign] = m.hand > 0 ? [m.armR, m.armL, -1] : [m.armL, m.armR, 1];
+  gunArm.rotation.x = holding || aiming ? -1.45 : -sw * offSign * 0.8;
+  gunArm.rotation.z = 0;
+  offArm.rotation.x = aiming ? -1.25 : sw * offSign * 0.8;
+  offArm.rotation.z = aiming ? 0.35 * offSign : 0;
   m.torso.position.y = 0.85 + Math.abs(Math.sin(m.walk)) * 0.04 * speed01;
 }
 

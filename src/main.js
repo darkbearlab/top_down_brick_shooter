@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Input } from './input.js';
 import { sfx, unlockAudio } from './audio.js';
 import { ARENA_ROOMS, BREACH_LEVELS } from './rooms.js';
-import { makeBlockMan, animateMan, setFlash } from './models.js';
+import { makeBlockMan, animateMan, setFlash, setHand } from './models.js';
 import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh, sampleVoxels } from './voxel.js';
 import { loadLoadout, openLoadout } from './loadout.js';
@@ -635,12 +635,20 @@ function startSwap() {
   updateAmmoHud();
 }
 
-// fwd = 槍口離身體中心往前多遠
-const muzzleOf = (x, z, fx, fz, s = 1, fwd = 0.67) => ({
-  x: x + (fz * 0.2 + fx * fwd) * s,
-  z: z + (-fx * 0.2 + fz * fwd) * s,
+// fwd = 槍口離身體中心往前多遠；hand = 1 右手、-1 左手
+const muzzleOf = (x, z, fx, fz, s = 1, fwd = 0.67, hand = 1) => ({
+  x: x + (fz * 0.2 * hand + fx * fwd) * s,
+  z: z + (-fx * 0.2 * hand + fz * fwd) * s,
 });
-const playerMuzzle = () => muzzleOf(player.x, player.z, player.fx, player.fz, 1, 0.22 + curSlot().muzzleZ);
+const playerMuzzle = () => muzzleOf(player.x, player.z, player.fx, player.fz, 1, 0.22 + curSlot().muzzleZ, player.man.hand);
+
+// 換持槍手，記在瀏覽器裡
+const HAND_KEY = 'brickshooter.hand';
+function toggleHand() {
+  setHand(player.man, -player.man.hand);
+  try { localStorage.setItem(HAND_KEY, player.man.hand); } catch { /* 存不了就只影響這次 */ }
+  updateAmmoHud();
+}
 
 const angleDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 function approachAngle(a, t, maxStep) {
@@ -695,7 +703,7 @@ function updatePlayer(dt) {
         if (d > 0.05) {
           ax /= d; az /= d;
           // 從槍口重新對準游標，讓雷射剛好落在游標上
-          const m = muzzleOf(p.x, p.z, ax, az, 1, 0.22 + slot.muzzleZ);
+          const m = muzzleOf(p.x, p.z, ax, az, 1, 0.22 + slot.muzzleZ, p.man.hand);
           const mx = tmpV.x - m.x, mz = tmpV.z - m.z, md = Math.hypot(mx, mz);
           if (d > 1.5 && md > 0.01) { ax = mx / md; az = mz / md; }
         } else aiming = false;
@@ -728,6 +736,7 @@ function updatePlayer(dt) {
 
   // 切槍
   if (input.swapPressed) startSwap();
+  if (input.handPressed) toggleHand();
   if (p.swapT > 0) {
     p.swapT -= dt;
     if (!p.swapped && p.swapT <= p.swapDur / 2) {
@@ -830,7 +839,7 @@ function killPlayer() {
 // ---------- 敵人 ----------
 // mag = 幾發後要換彈；seekCover = 換彈時躲到玩家看不到的地方；react = 發現玩家後幾秒才行動
 const ETYPES = {
-  R: { hp: 70, r: 0.36, speed: 4.1, shirt: 0xd8433b, pants: 0x4a1c1c, helmet: null, scale: 1, gun: false, react: 0.45 },
+  R: { hp: 60, r: 0.36, speed: 4.1, shirt: 0xd8433b, pants: 0x4a1c1c, helmet: null, scale: 1, gun: false, react: 0.45 },
   S: { hp: 100, r: 0.36, speed: 2.6, shirt: 0xe0892a, pants: 0x3a3022, helmet: 0x6b4a1f, scale: 1, gun: true,
     mag: 6, reload: 1.7, seekCover: true, aimTime: 0.85, react: 0.55,
     build: { caliber: '556', receiver: 'carbine', stock: 'fold', mag: 'std', barrel: 'std', grip: 'none' } },
@@ -965,16 +974,16 @@ function updateEnemies(dt) {
           if (!player.alive) break;
           const d = los ? { x: nx, z: nz } : navDir(e);
           wx = d.x * spd; wz = d.z * spd; faceX = d.x; faceZ = d.z;
-          if (los && dist < 2.9) { e.state = 'wind'; e.t = 0.32; e.lx = nx; e.lz = nz; sfx.lunge(); }
+          if (los && dist < 2.9) { e.state = 'wind'; e.t = 0.55; e.lx = nx; e.lz = nz; sfx.lunge(); }
           break;
         }
         case 'wind':   // 衝刺前蹲一下、發紅 = 預告
           faceX = e.lx; faceZ = e.lz;
           e.man.body.position.x = (Math.random() - 0.5) * 0.08;
-          if (e.t <= 0) { e.state = 'dash'; e.t = 0.28; e.man.body.position.x = 0; }
+          if (e.t <= 0) { e.state = 'dash'; e.t = 0.32; e.man.body.position.x = 0; }
           break;
         case 'dash':
-          e.vx = e.lx * 12 * e.speedMul; e.vz = e.lz * 12 * e.speedMul; direct = true;
+          e.vx = e.lx * 9.5 * e.speedMul; e.vz = e.lz * 9.5 * e.speedMul; direct = true;
           faceX = e.lx; faceZ = e.lz;
           if (e.t <= 0) { e.state = 'recover'; e.t = 0.5; }
           break;
@@ -1191,6 +1200,7 @@ function updateAmmoHud() {
   ammoEl.classList.toggle('low', !reloading && s.ammo <= Math.ceil(st.mag / 4));
   $('wAlt').textContent = other ? `${other.stats.name} ${other.ammo}/${other.stats.mag}` : '';
   swapBtn.classList.toggle('busy', p.swapT > 0);
+  $('handBtn').textContent = p.man.hand > 0 ? '右手持槍' : '左手持槍';
 }
 
 function showToast(text, cls) {
@@ -1288,6 +1298,7 @@ function showMenu() {
 
 $('pauseBtn').addEventListener('click', pauseGame);
 swapBtn.addEventListener('pointerdown', e => { e.preventDefault(); input.swapPressed = true; });
+$('handBtn').addEventListener('pointerdown', e => { e.preventDefault(); input.handPressed = true; });
 addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
 const input = new Input(container);
@@ -1297,6 +1308,7 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 
 window.__dbg = { player, enemies, bullets, get level() { return level; }, startGame };  // 除錯用
 
+try { if (localStorage.getItem(HAND_KEY) === '-1') setHand(player.man, -1); } catch { /* 用預設右手 */ }
 equipLoadout(loadLoadout());
 buildMenu();
 showMenu();
@@ -1327,6 +1339,7 @@ function frame(t) {
   if (dt > 0) updateParticles(dt);
   input.reloadPressed = false;
   input.swapPressed = false;
+  input.handPressed = false;
 
   // 出口閃爍
   for (const m of level.exitMeshes) m.material.opacity = 0.35 + Math.sin(now * 6) * 0.2;
