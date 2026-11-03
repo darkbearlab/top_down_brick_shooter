@@ -53,4 +53,12 @@ export const sfx = {
   lunge() { tone('square', 120, 260, 0.15, 0.08); },
   door() { tone('triangle', 400, 900, 0.35, 0.2); },
   die() { tone('sawtooth', 300, 30, 0.9, 0.4); noise(0.8, 0.5, 300, 0.4); },
+  reloadStart() { tone('square', 600, 300, 0.05, 0.08); noise(0.04, 0.15, 3000, 2); },
+  reloadDone() { tone('square', 300, 800, 0.07, 0.1); noise(0.05, 0.2, 2200, 2); },
+  empty() { tone('square', 1300, 1200, 0.03, 0.06); },
+  enemyReload() { noise(0.06, 0.12, 2600, 2); },
+  breach() { tone('sawtooth', 130, 30, 0.6, 0.45); noise(0.5, 0.9, 500, 0.5); },
+  doorHit() { noise(0.08, 0.3, 700, 1); },
+  alert() { tone('square', 900, 1400, 0.08, 0.07); },
+  click() { tone('triangle', 700, 900, 0.05, 0.1); },
 };

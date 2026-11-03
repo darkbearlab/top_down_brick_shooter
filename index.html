@@ -14,10 +14,21 @@
 <body>
 <div id="game"></div>
 
-<div id="hud">
-  <div id="hits"></div>
-  <div id="room">ROOM 1</div>
+<div id="hud" class="hidden">
+  <div class="col">
+    <div id="hits"></div>
+    <div id="ammo">
+      <div id="ammoPips"></div>
+      <div id="reloadBar"><div></div></div>
+      <span class="lbl">RELOAD</span>
+    </div>
+  </div>
+  <div class="row">
+    <div id="room"></div>
+    <button id="pauseBtn" aria-label="暫停">❚❚</button>
+  </div>
 </div>
+<div id="toast"></div>
 <div id="flash"></div>
 <div id="fade"></div>
 
@@ -26,11 +37,23 @@
   <div class="stick" id="stickR"><div class="ring"></div><div class="knob"></div></div>
 </div>
 
-<div id="overlay">
-  <h1 id="ovTitle">BRICK SHOOTER</h1>
-  <p id="ovText">被擊中 3 次就死<br>清光房間，走進綠色出口</p>
-  <p id="ovHint" class="hint">點擊開始</p>
-  <p class="controls">手機：左半邊移動 ・ 右半邊瞄準，推到底開火<br>電腦：WASD 移動 ・ 滑鼠瞄準 ・ 左鍵開火</p>
+<!-- 進入畫面：按鈕由 main.js 的 MENU_ITEMS 產生，之後加功能只要加一筆 -->
+<div id="menu" class="screen">
+  <div class="menu-inner">
+    <h1>BRICK<br>SHOOTER</h1>
+    <p class="tag">方塊人俯視射擊</p>
+    <div id="menuButtons"></div>
+    <p class="ver">v0.2</p>
+  </div>
+</div>
+
+<!-- 通用面板：暫停、死亡、說明、任務完成 -->
+<div id="panel" class="screen hidden">
+  <div class="panel-inner">
+    <h2 id="panelTitle"></h2>
+    <div id="panelText"></div>
+    <div id="panelButtons"></div>
+  </div>
 </div>
 
 <script type="module" src="src/main.js"></script>

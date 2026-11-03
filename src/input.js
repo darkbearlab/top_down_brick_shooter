@@ -15,6 +15,8 @@ export class Input {
     this.mouse = { x: innerWidth / 2, y: innerHeight / 2, down: false, seen: false };
     this.keys = new Set();
     this.onFireStage = null;   // 進入開火段時的回呼（震動用）
+    this.reloadPressed = false; // 單次事件，遊戲讀完要清掉
+    this.pausePressed = false;
 
     this.left = { id: null, ox: 0, oy: 0, x: 0, y: 0, el: document.getElementById('stickL') };
     this.right = { id: null, ox: 0, oy: 0, x: 0, y: 0, el: document.getElementById('stickR') };
@@ -35,7 +37,12 @@ export class Input {
     el.addEventListener('mousedown', e => { if (e.button === 0) { this.mouse.down = true; this.source = 'mouse'; this.mouse.seen = true; } });
     addEventListener('mouseup', e => { if (e.button === 0) this.mouse.down = false; });
     addEventListener('contextmenu', e => e.preventDefault());
-    addEventListener('keydown', e => { this.keys.add(e.code); });
+    addEventListener('keydown', e => {
+      this.keys.add(e.code);
+      if (e.repeat) return;
+      if (e.code === 'KeyR') this.reloadPressed = true;
+      if (e.code === 'Escape' || e.code === 'KeyP') this.pausePressed = true;
+    });
     addEventListener('keyup', e => { this.keys.delete(e.code); });
     addEventListener('blur', () => { this.keys.clear(); this.mouse.down = false; });
   }
@@ -47,6 +54,7 @@ export class Input {
       const s = t.clientX < innerWidth / 2 ? this.left : this.right;
       if (s.id !== null) continue;
       s.id = t.identifier; s.ox = s.x = t.clientX; s.oy = s.y = t.clientY;
+      s.t0 = performance.now(); s.maxM = 0;
       s.el.style.left = s.ox + 'px'; s.el.style.top = s.oy + 'px';
       s.el.classList.add('on');
       this.setKnob(s, 0, 0);
@@ -67,6 +75,7 @@ export class Input {
           s.el.style.left = s.ox + 'px'; s.el.style.top = s.oy + 'px';
           dx = s.x - s.ox; dy = s.y - s.oy;
         }
+        s.maxM = Math.max(s.maxM, Math.hypot(dx, dy) / STICK_R);
         this.setKnob(s, dx, dy);
       }
     }
@@ -75,6 +84,8 @@ export class Input {
     for (const t of e.changedTouches) {
       for (const s of [this.left, this.right]) {
         if (s.id !== t.identifier) continue;
+        // 右半邊快速點一下（沒推動）= 換彈
+        if (s === this.right && performance.now() - s.t0 < 250 && s.maxM < AIM_DEAD) this.reloadPressed = true;
         s.id = null; s.el.classList.remove('on', 'laser', 'fire');
       }
     }
