@@ -18,10 +18,10 @@
   <div class="col">
     <div id="hits"></div>
     <div id="ammo">
-      <div id="ammoPips"></div>
-      <div id="reloadBar"><div></div></div>
-      <span class="lbl">RELOAD</span>
+      <div class="wrow"><span id="wName"></span><span id="ammoNum"></span></div>
+      <div id="ammoBar"><div></div></div>
     </div>
+    <button id="swapBtn" aria-label="切換武器">⇄ <span id="wAlt"></span></button>
   </div>
   <div class="row">
     <div id="room"></div>
@@ -44,6 +44,22 @@
     <p class="tag">方塊人俯視射擊</p>
     <div id="menuButtons"></div>
     <p class="ver">v0.2</p>
+  </div>
+</div>
+
+<!-- 武器與裝備 -->
+<div id="loadout" class="screen hidden">
+  <div class="lo-inner">
+    <div class="lo-head"><h2>武器與裝備</h2><button id="loDone" class="btn primary">完成</button></div>
+    <div id="loTabs">
+      <button>主武器<small></small></button>
+      <button>副武器<small></small></button>
+    </div>
+    <div id="loPreview"></div>
+    <div id="loName"></div>
+    <div id="loStats"></div>
+    <div id="loNote"></div>
+    <div id="loRows"></div>
   </div>
 </div>
 

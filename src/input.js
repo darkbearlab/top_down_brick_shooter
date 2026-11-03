@@ -17,6 +17,8 @@ export class Input {
     this.onFireStage = null;   // 進入開火段時的回呼（震動用）
     this.reloadPressed = false; // 單次事件，遊戲讀完要清掉
     this.pausePressed = false;
+    this.swapPressed = false;
+    el.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > 10) this.swapPressed = true; }, { passive: true });
 
     this.left = { id: null, ox: 0, oy: 0, x: 0, y: 0, el: document.getElementById('stickL') };
     this.right = { id: null, ox: 0, oy: 0, x: 0, y: 0, el: document.getElementById('stickR') };
@@ -41,6 +43,7 @@ export class Input {
       this.keys.add(e.code);
       if (e.repeat) return;
       if (e.code === 'KeyR') this.reloadPressed = true;
+      if (e.code === 'KeyQ') this.swapPressed = true;
       if (e.code === 'Escape' || e.code === 'KeyP') this.pausePressed = true;
     });
     addEventListener('keyup', e => { this.keys.delete(e.code); });

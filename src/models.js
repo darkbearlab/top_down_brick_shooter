@@ -1,61 +1,59 @@
 import * as THREE from 'three';
+import { V, VoxelSet, buildVoxelMesh } from './voxel.js';
 
-const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-
-// 方塊人：root 只管位置，body 管朝向（local +z = 前方）
-export function makeBlockMan({ skin = 0xf0c9a0, shirt, pants = 0x2b2f3a, gun = 0x222222, scale = 1, helmet = null }) {
-  const mats = {
-    skin: new THREE.MeshLambertMaterial({ color: skin }),
-    shirt: new THREE.MeshLambertMaterial({ color: shirt }),
-    pants: new THREE.MeshLambertMaterial({ color: pants }),
-    gun: new THREE.MeshLambertMaterial({ color: gun }),
+// 方塊人：全部由 1/16 的小方塊組成，每格各自有顏色
+// root 只管位置，body 管朝向（local +z = 前方）
+export function makeBlockMan({ skin = 0xf0c9a0, shirt, pants = 0x2b2f3a, boots = 0x1b1c22, helmet = null, scale = 1 }) {
+  const pal = {
+    skin, shirt, pants, boots, helmet: helmet ?? 0,
+    belt: 0x2a2420, eye: 0x111111, mouth: 0x9a6a50,
   };
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const mats = { main: mat };
   const root = new THREE.Group();
   const body = new THREE.Group();
   body.scale.setScalar(scale);
   root.add(body);
 
-  const mesh = (g, m, x, y, z, parent = body) => {
-    const o = new THREE.Mesh(g, m);
-    o.position.set(x, y, z);
-    o.castShadow = true;
-    parent.add(o);
-    return o;
-  };
+  // 身體 8x9x5，最下一排是皮帶
+  const torso = buildVoxelMesh(
+    new VoxelSet().box(0, 0, 0, 8, 9, 5, (i, j) => j === 0 ? 'belt' : 'shirt'),
+    mat, pal, { x: 'center', y: 'center', z: 'center' });
+  torso.position.y = 0.85;
+  body.add(torso);
 
-  const torso = mesh(box(0.5, 0.55, 0.3), mats.shirt, 0, 0.85, 0);
-  const head = mesh(box(0.32, 0.32, 0.32), mats.skin, 0, 1.3, 0);
-  // 眼睛（讓朝向一眼看得出來）
-  const eyeM = new THREE.MeshBasicMaterial({ color: 0x111111 });
-  mesh(box(0.06, 0.06, 0.02), eyeM, -0.08, 1.33, 0.165);
-  mesh(box(0.06, 0.06, 0.02), eyeM, 0.08, 1.33, 0.165);
-  if (helmet !== null) {
-    mats.helmet = new THREE.MeshLambertMaterial({ color: helmet });
-    mesh(box(0.38, 0.14, 0.38), mats.helmet, 0, 1.47, -0.01);
-  }
+  // 頭 5x5x5，正面有眼睛；有頭盔就在上面加兩層 + 帽簷
+  const hs = new VoxelSet().box(0, 0, 0, 5, 5, 5, (i, j, k) =>
+    k === 4 && j === 2 && (i === 1 || i === 3) ? 'eye' : 'skin');
+  if (helmet !== null) { hs.box(0, 4, 0, 5, 2, 5, 'helmet'); hs.box(0, 4, 5, 5, 1, 1, 'helmet'); }
+  const head = buildVoxelMesh(hs, mat, pal, { x: 'center', y: 'min', z: 'center' });
+  head.position.set(0, 1.3 - 2.5 * V, -0.5 * V);
+  body.add(head);
 
-  const limb = (x, y, w, h, m) => {
+  const limb = (x, y, set) => {
     const pivot = new THREE.Group();
     pivot.position.set(x, y, 0);
+    pivot.add(buildVoxelMesh(set, mat, pal, { x: 'center', y: 'max', z: 'center' }));
     body.add(pivot);
-    mesh(box(w, h, w), m, 0, -h / 2, 0, pivot);
     return pivot;
   };
-  const legL = limb(-0.13, 0.58, 0.19, 0.55, mats.pants);
-  const legR = limb(0.13, 0.58, 0.19, 0.55, mats.pants);
-  const armL = limb(-0.33, 1.08, 0.15, 0.45, mats.shirt);
-  const armR = limb(0.33, 1.08, 0.15, 0.45, mats.shirt);
+  const legSet = () => new VoxelSet().box(0, 0, 0, 3, 9, 3, (i, j) => j < 2 ? 'boots' : 'pants');
+  const armSet = () => new VoxelSet().box(0, 0, 0, 2, 7, 2, (i, j) => j < 2 ? 'skin' : 'shirt');
+  const legL = limb(-0.125, 0.58, legSet());
+  const legR = limb(0.125, 0.58, legSet());
+  const armL = limb(-0.3125, 1.08, armSet());
+  const armR = limb(0.3125, 1.08, armSet());
 
-  // 槍掛在右手前方（舉槍時手臂朝前）
-  const gunG = new THREE.Group();
-  gunG.position.set(0.2, 0.95, 0.25);
-  body.add(gunG);
-  mesh(box(0.1, 0.12, 0.55), mats.gun, 0, 0, 0.12, gunG);
-  const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, 0, 0.42);
-  gunG.add(muzzle);
+  // 手上的槍（原點 = 握把位置）與背上的備用槍
+  const gun = new THREE.Group();
+  gun.position.set(0.2, 0.825, 0.22);
+  body.add(gun);
+  const back = new THREE.Group();
+  back.position.set(-0.05, 0.95, -0.24);
+  back.rotation.set(-Math.PI / 2 + 0.25, 0, 0.7);
+  body.add(back);
 
-  return { root, body, torso, head, legL, legR, armL, armR, gun: gunG, muzzle, mats, walk: 0 };
+  return { root, body, torso, head, legL, legR, armL, armR, gun, back, mats, walk: 0 };
 }
 
 // 走路 + 舉槍姿勢
@@ -72,8 +70,5 @@ export function animateMan(m, speed01, dt, aiming) {
 
 // 受傷閃白
 export function setFlash(m, on) {
-  for (const k in m.mats) {
-    const mat = m.mats[k];
-    mat.emissive.setHex(on ? 0xffffff : 0x000000);
-  }
+  for (const k in m.mats) m.mats[k].emissive.setHex(on ? 0xffffff : 0x000000);
 }

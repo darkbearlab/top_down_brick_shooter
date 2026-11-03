@@ -54,16 +54,20 @@ html, body {
 #stickR.fire { border-color: rgba(255,200,80,.7); }
 #stickR.fire .knob { background: rgba(255,190,60,.9); }
 
-#ammo { display: flex; align-items: center; gap: 6px; height: 16px; }
-#ammoPips { display: flex; gap: 3px; }
-#ammoPips i { width: 5px; height: 15px; background: #ffd060; border-radius: 1px; }
-#ammoPips i.spent { background: rgba(255,255,255,.14); }
-#ammo.low #ammoPips i:not(.spent) { background: #ff7040; }
-#reloadBar { width: 84px; height: 6px; background: rgba(255,255,255,.15); display: none; border-radius: 3px; overflow: hidden; }
-#reloadBar div { height: 100%; width: 0; background: #5adcff; }
-#ammo .lbl { display: none; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #5adcff; }
-#ammo.reloading #ammoPips { display: none; }
-#ammo.reloading #reloadBar, #ammo.reloading .lbl { display: block; }
+#ammo { width: 132px; }
+#ammo .wrow { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
+#ammoNum { font-size: 15px; font-variant-numeric: tabular-nums; }
+#ammoBar { height: 6px; background: rgba(255,255,255,.14); border-radius: 3px; overflow: hidden; }
+#ammoBar div { height: 100%; width: 100%; background: #ffd060; }
+#ammo.low #ammoBar div { background: #ff7040; }
+#ammo.reloading #ammoBar div { background: #5adcff; }
+#ammo.reloading #ammoNum { color: #5adcff; }
+#swapBtn {
+  pointer-events: auto; align-self: flex-start; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.35); color: #e8ecf2;
+  font: inherit; font-size: 12px; font-weight: 700;
+}
+#swapBtn.busy { opacity: .45; }
 
 #toast {
   position: fixed; left: 0; right: 0; top: 22%; text-align: center; z-index: 7; pointer-events: none;
@@ -105,3 +109,44 @@ html, body {
 .btn:disabled { opacity: .35; cursor: default; }
 .btn:not(:disabled):active { transform: scale(.98); }
 #panelButtons .btn { text-align: center; }
+
+/* 武器與裝備 */
+#loadout { align-items: flex-start; overflow-y: auto; touch-action: pan-y; background: rgba(8,10,14,.96); }
+.lo-inner { width: 100%; max-width: 480px; margin: 0 auto; padding-bottom: 32px; display: flex; flex-direction: column; gap: 10px; }
+.lo-head { display: flex; justify-content: space-between; align-items: center; padding-top: env(safe-area-inset-top); }
+.lo-head h2 { font-size: 22px; letter-spacing: 2px; }
+.lo-head .btn { width: auto; padding: 9px 18px; font-size: 15px; text-align: center; }
+#loTabs { display: flex; gap: 8px; }
+#loTabs button {
+  flex: 1; padding: 10px; border-radius: 10px; cursor: pointer; font: inherit; font-weight: 800; font-size: 15px;
+  border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: #e8ecf2;
+}
+#loTabs button small { display: block; font-size: 11px; font-weight: 500; opacity: .6; }
+#loTabs button.on { border-color: #2f8cff; background: rgba(47,140,255,.18); }
+#loPreview { height: 170px; border-radius: 12px; background: radial-gradient(ellipse at center, #232a38, #12151c); overflow: hidden; }
+#loPreview canvas { display: block; width: 100%; height: 100%; }
+#loName { font-weight: 800; letter-spacing: 1px; text-align: center; }
+#loStats { display: grid; gap: 4px; font-size: 12px; }
+.st { display: grid; grid-template-columns: 44px 1fr 96px; align-items: center; gap: 8px; }
+.st .sl { opacity: .7; }
+.st .sb { position: relative; height: 6px; background: rgba(255,255,255,.1); border-radius: 3px; overflow: hidden; }
+.st .sb i { position: absolute; left: 0; top: 0; bottom: 0; background: #9aa6bd; }
+.st .sb b { position: absolute; top: 0; bottom: 0; }
+.st.up .sb b { background: #40e090; }
+.st.down .sb b { background: #ff5a4a; }
+.st .sv { text-align: right; font-variant-numeric: tabular-nums; }
+.st .sv s { opacity: .45; }
+.st.up .sv { color: #40e090; }
+.st.down .sv { color: #ff7a6a; }
+#loNote { font-size: 12px; color: #ffd060; min-height: 0; }
+.lo-row { display: flex; flex-direction: column; gap: 6px; }
+.lo-label { font-size: 12px; font-weight: 800; letter-spacing: 1px; opacity: .6; }
+.lo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 8px 12px; border-radius: 9px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700;
+  border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: #e8ecf2; text-align: left;
+}
+.chip.on { border-color: #ffd060; background: rgba(255,208,96,.16); }
+.chip:disabled { opacity: .35; cursor: default; }
+.chip small { display: block; font-size: 10px; font-weight: 500; margin-top: 2px; }
+#loName small { display: block; font-size: 11px; font-weight: 500; opacity: .55; letter-spacing: 0; margin-top: 2px; }

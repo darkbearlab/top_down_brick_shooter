@@ -3,7 +3,11 @@ import { Input } from './input.js';
 import { sfx, unlockAudio } from './audio.js';
 import { ARENA_ROOMS, BREACH_LEVELS } from './rooms.js';
 import { makeBlockMan, animateMan, setFlash } from './models.js';
-import { WEAPONS } from './weapons.js';
+import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
+import { buildVoxelMesh, sampleVoxels } from './voxel.js';
+import { loadLoadout, openLoadout } from './loadout.js';
+
+const DEG = Math.PI / 180;
 
 let W = 13, H = 19;          // 依地圖改變
 const MAX_HITS = 3;
@@ -287,7 +291,7 @@ function loadLevel(mode, index) {
       m.position.set(x, WALL_H * 0.46, z);
       m.castShadow = m.receiveShadow = true;
       level.group.add(m);
-      level.doors.set(c + r * W, { c, r, x, z, mesh: m, hp: 4, open: false });
+      level.doors.set(c + r * W, { c, r, x, z, mesh: m, hp: 130, open: false });
     } else if (ch === 'P') { player.x = x; player.z = z; }
     else if ('RSH'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
   }
@@ -456,7 +460,7 @@ function updateBullets(dt) {
             // 門可以打爛
             burst(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, WOOD, 1, 2);
             sfx.doorHit();
-            if (b.owner === 'p' && --door.hp <= 0) breachDoor(door, false, b.dx, b.dz);
+            if (b.owner === 'p' && (door.hp -= b.dmg) <= 0) breachDoor(door, false, b.dx, b.dz);
           } else {
             sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, b.owner === 'p' ? 0xffc060 : 0xff6050, 4, -b.dx, -b.dz);
             if (b.owner === 'p') sfx.wall();
@@ -500,6 +504,27 @@ function burst(x, y, z, colors, n, power, bx = 0, bz = 0) {
     debris.push({
       m, s, life: 1.6 + Math.random() * 1.2,
       vx: Math.cos(a) * p + bx, vy: 3 + Math.random() * power, vz: Math.sin(a) * p + bz,
+      sx: (Math.random() - 0.5) * 20, sz: (Math.random() - 0.5) * 20,
+    });
+  }
+}
+// 角色 / 武器爆開：直接拿身上的方塊噴出去
+function voxelBurst(root, n, power, bx = 0, bz = 0) {
+  const cx = root.position.x, cz = root.position.z;
+  for (const v of sampleVoxels(root, n)) {
+    const m = new THREE.Mesh(DEBRIS_GEO, debrisMat(v.c));
+    const s = 0.6 + Math.random() * 0.5;
+    m.scale.setScalar(s);
+    m.position.set(v.x, v.y, v.z);
+    m.castShadow = true;
+    scene.add(m);
+    let ox = v.x - cx, oz = v.z - cz;
+    const ol = Math.hypot(ox, oz) || 1;
+    ox /= ol; oz /= ol;
+    const p = power * (0.4 + Math.random() * 0.8);
+    debris.push({
+      m, s, life: 1.6 + Math.random() * 1.2,
+      vx: ox * p + (Math.random() - 0.5) * 2 + bx, vy: 2 + Math.random() * power * 0.9 + v.y, vz: oz * p + (Math.random() - 0.5) * 2 + bz,
       sx: (Math.random() - 0.5) * 20, sz: (Math.random() - 0.5) * 20,
     });
   }
@@ -549,48 +574,90 @@ function updateParticles(dt) {
 
 // ---------- 玩家 ----------
 const player = {
-  man: makeBlockMan({ shirt: 0x2f8cff, pants: 0x23324d, helmet: 0x1f5fa8, gun: 0x1a1a1a }),
+  man: makeBlockMan({ shirt: 0x2f8cff, pants: 0x23324d, helmet: 0x1f5fa8 }),
   x: 0, z: 0, vx: 0, vz: 0, r: 0.33, fx: 0, fz: -1,
+  aimA: Math.PI, recoil: 0, kickSign: 1,   // aimA = 實際槍口角度；recoil = 後座力造成的偏移
   hits: 0, inv: 0, fireCd: 0, alive: true, kick: 0,
-  weapon: WEAPONS.rifle, ammo: WEAPONS.rifle.mag, reloadT: 0,
-  laser: makeLaser(0x40d8ff), bar: makeBar(0x5adcff),
+  slots: [], cur: 0, swapT: 0, swapDur: 1, swapped: true,
+  laser: makeLaser(0x40d8ff), guide: makeLaser(0xffffff), bar: makeBar(0x5adcff),
 };
 scene.add(player.man.root);
+const swapTimeOf = () => swapTime(player.slots.map(s => s.stats));
+const curSlot = () => player.slots[player.cur];
+
+// 依裝備建出兩把槍的方塊模型；手上一把、背上一把
+function equipLoadout(lo) {
+  for (const s of player.slots) { s.mesh.parent?.remove(s.mesh); s.mesh.dispose(); }
+  player.slots = lo.map(build => {
+    const w = buildWeapon(build);
+    const stats = computeStats(build);
+    const mesh = buildVoxelMesh(w.set, player.man.mats.main, WEAPON_PAL);
+    return { build, stats, mesh, muzzleZ: w.muzzleZ, muzzleY: w.muzzleY, ammo: stats.mag, reloadT: 0 };
+  });
+  player.cur = 0;
+  mountWeapons();
+}
+function mountWeapons() {
+  const m = player.man;
+  player.slots.forEach((s, i) => {
+    if (i === player.cur) { m.gun.add(s.mesh); m.gun.position.y = GUN_Y - s.muzzleY; }
+    else m.back.add(s.mesh);
+  });
+}
 
 function resetPlayer() {
   const p = player;
-  p.vx = p.vz = 0; p.fx = 0; p.fz = -1;
+  p.vx = p.vz = 0; p.fx = 0; p.fz = -1; p.aimA = Math.PI; p.recoil = 0;
   p.inv = 0.6; p.fireCd = 0; p.alive = true; p.kick = 0;
-  p.ammo = p.weapon.mag; p.reloadT = 0;
+  if (p.cur !== 0) { p.cur = 0; mountWeapons(); }
+  for (const s of p.slots) { s.ammo = s.stats.mag; s.reloadT = 0; }
+  p.swapT = 0; p.swapped = true;
   p.man.root.visible = true;
   p.man.root.position.set(p.x, 0, p.z);
   p.bar.g.visible = false;
-  buildAmmoHud();
+  updateAmmoHud();
 }
 
 function startReload() {
-  const p = player;
-  if (!p.alive || p.reloadT > 0 || p.ammo >= p.weapon.mag) return;
-  p.reloadT = p.weapon.reload;
+  const p = player, s = curSlot();
+  if (!p.alive || p.swapT > 0 || s.reloadT > 0 || s.ammo >= s.stats.mag) return;
+  s.reloadT = s.stats.reload;
   sfx.reloadStart();
   updateAmmoHud();
 }
 
-const muzzleOf = (x, z, fx, fz, s = 1) => ({
-  x: x + (fz * 0.2 + fx * 0.67) * s,
-  z: z + (-fx * 0.2 + fz * 0.67) * s,
+function startSwap() {
+  const p = player;
+  if (!p.alive || p.swapT > 0 || p.slots.length < 2) return;
+  curSlot().reloadT = 0;   // 切槍會中斷換彈
+  p.swapDur = p.swapT = swapTimeOf(); p.swapped = false;
+  sfx.reloadStart();
+  updateAmmoHud();
+}
+
+// fwd = 槍口離身體中心往前多遠
+const muzzleOf = (x, z, fx, fz, s = 1, fwd = 0.67) => ({
+  x: x + (fz * 0.2 + fx * fwd) * s,
+  z: z + (-fx * 0.2 + fz * fwd) * s,
 });
+const playerMuzzle = () => muzzleOf(player.x, player.z, player.fx, player.fz, 1, 0.22 + curSlot().muzzleZ);
+
+const angleDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+function approachAngle(a, t, maxStep) {
+  const d = angleDiff(a, t);
+  return Math.abs(d) <= maxStep ? t : a + Math.sign(d) * maxStep;
+}
 
 const raycaster = new THREE.Raycaster();
 const aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GUN_Y);
 const tmpV = new THREE.Vector3(), ndc = new THREE.Vector2();
 
 function updatePlayer(dt) {
-  const p = player, wpn = p.weapon;
-  if (!p.alive) { p.laser.g.visible = false; p.bar.g.visible = false; return; }
+  const p = player, slot = curSlot(), st = slot.stats;
+  if (!p.alive) { p.laser.g.visible = p.guide.g.visible = p.bar.g.visible = false; return; }
   const mode = input.aimMode;
   const firing = mode === 'fire';
-  const spd = 5.6 * (firing ? 0.78 : 1) * (p.reloadT > 0 ? 0.9 : 1);
+  const spd = 5.6 * (firing ? 0.78 : 1) * (slot.reloadT > 0 ? 0.9 : 1) * (1 - st.weight * 0.035);
   const k = 1 - Math.exp(-18 * dt);
   p.vx += (input.move.x * spd - p.vx) * k;
   p.vz += (input.move.y * spd - p.vz) * k;
@@ -615,7 +682,7 @@ function updatePlayer(dt) {
     if (p.kick >= 0.15) { breachDoor(kicking, true, input.move.x / ml, input.move.y / ml); p.kick = 0; }
   } else p.kick = 0;
 
-  // 瞄準方向
+  // 目標方向（游標 / 右搖桿）
   let ax = 0, az = 0, aiming = mode !== 'none';
   if (aiming) {
     if (input.source === 'touch') { ax = input.aimVec.x; az = input.aimVec.y; }
@@ -628,66 +695,94 @@ function updatePlayer(dt) {
         if (d > 0.05) {
           ax /= d; az /= d;
           // 從槍口重新對準游標，讓雷射剛好落在游標上
-          const m = muzzleOf(p.x, p.z, ax, az);
+          const m = muzzleOf(p.x, p.z, ax, az, 1, 0.22 + slot.muzzleZ);
           const mx = tmpV.x - m.x, mz = tmpV.z - m.z, md = Math.hypot(mx, mz);
-          if (d > 1.2 && md > 0.01) { ax = mx / md; az = mz / md; }
+          if (d > 1.5 && md > 0.01) { ax = mx / md; az = mz / md; }
         } else aiming = false;
       } else aiming = false;
     }
   }
-  if (aiming) { p.fx = ax; p.fz = az; }
-  else if (ml > 0.2) {
-    const t = Math.atan2(input.move.x, input.move.y), c = Math.atan2(p.fx, p.fz);
-    const a = lerpAngle(c, t, 1 - Math.exp(-14 * dt));
-    p.fx = Math.sin(a); p.fz = Math.cos(a);
-  }
+  let targetA = null;
+  if (aiming) targetA = Math.atan2(ax, az);
+  else if (ml > 0.2) targetA = Math.atan2(input.move.x, input.move.y);
 
-  const m = muzzleOf(p.x, p.z, p.fx, p.fz);
+  // 實際槍口以「轉向速度」追目標；後座力偏移也以轉向速度相關的速率回正
+  if (targetA !== null) p.aimA = approachAngle(p.aimA, targetA, st.turn * DEG * (aiming ? 1 : 1.3) * dt);
+  p.recoil *= Math.exp(-dt * st.turn / 90);
+  const actA = p.aimA + p.recoil;
+  p.fx = Math.sin(actA); p.fz = Math.cos(actA);
+
+  const m = playerMuzzle();
   if (aiming) {
-    let len = castRay(m.x, m.z, p.fx, p.fz, 22);
+    let len = castRay(m.x, m.z, p.fx, p.fz, st.range);
     for (const e of enemies) len = Math.min(len, rayCircle(m.x, m.z, p.fx, p.fz, e.x, e.z, e.r));
     const pulse = 0.85 + Math.sin(now * 30) * 0.15;
-    const alpha = p.reloadT > 0 ? 0.3 : firing ? 0.35 : 0.8 * pulse;
+    const alpha = (slot.reloadT > 0 || p.swapT > 0) ? 0.3 : firing ? 0.35 : 0.8 * pulse;
     setLaser(p.laser, m.x, m.z, p.fx, p.fz, len, GUN_Y, alpha, firing ? 0.05 : 0.07);
-  } else p.laser.g.visible = false;
+    // 槍口還沒轉到位：用淡白線標出目標方向
+    if (Math.abs(angleDiff(actA, targetA)) > 0.035) {
+      const tx = Math.sin(targetA), tz = Math.cos(targetA);
+      setLaser(p.guide, m.x, m.z, tx, tz, Math.min(4, castRay(m.x, m.z, tx, tz, 4)), GUN_Y, 0.22, 0.03);
+    } else p.guide.g.visible = false;
+  } else p.laser.g.visible = p.guide.g.visible = false;
+
+  // 切槍
+  if (input.swapPressed) startSwap();
+  if (p.swapT > 0) {
+    p.swapT -= dt;
+    if (!p.swapped && p.swapT <= p.swapDur / 2) {
+      // 換手的那一刻：手上的槍放背上、背上的拿到手上
+      p.swapped = true;
+      p.man.gun.remove(slot.mesh); p.man.back.remove(p.slots[p.cur ^ 1].mesh);
+      p.cur ^= 1;
+      mountWeapons();
+      updateAmmoHud();
+    }
+    if (p.swapT <= 0) { p.swapT = 0; updateAmmoHud(); }
+  }
 
   // 換彈
+  const cs = curSlot(), cst = cs.stats;
   if (input.reloadPressed) startReload();
-  if (p.reloadT > 0) {
-    p.reloadT -= dt;
-    if (p.reloadT <= 0) { p.reloadT = 0; p.ammo = wpn.mag; sfx.reloadDone(); updateAmmoHud(); }
+  if (cs.reloadT > 0) {
+    cs.reloadT -= dt;
+    if (cs.reloadT <= 0) { cs.reloadT = 0; cs.ammo = cst.mag; sfx.reloadDone(); }
+    updateAmmoHud();
   }
 
   p.fireCd -= dt;
-  if (firing && p.fireCd <= 0 && p.reloadT <= 0) {
-    if (p.ammo <= 0) { sfx.empty(); startReload(); p.fireCd = 0.2; }
+  if (firing && p.fireCd <= 0 && cs.reloadT <= 0 && p.swapT <= 0) {
+    if (cs.ammo <= 0) { sfx.empty(); startReload(); p.fireCd = 0.2; }
     else {
-      p.fireCd = wpn.fireInterval;
-      for (let n = 0; n < wpn.pellets; n++) {
-        const sp = (Math.random() - 0.5) * wpn.spread;
-        const c = Math.cos(sp), s = Math.sin(sp);
-        spawnBullet('p', 'player', m.x, m.z, p.fx * c - p.fz * s, p.fx * s + p.fz * c, wpn.speed, 30, wpn.damage);
-      }
-      muzzleFlash(m.x, GUN_Y, m.z, 0xffc040);
-      p.vx -= p.fx * wpn.recoil; p.vz -= p.fz * wpn.recoil;
-      addTrauma(wpn.shake);
+      p.fireCd = cst.fireInterval;
+      const mm = playerMuzzle();
+      const sp = (Math.random() - 0.5) * cst.spread;
+      spawnBullet('p', 'player', mm.x, mm.z, Math.sin(actA + sp), Math.cos(actA + sp), cst.speed, cst.range, cst.damage);
+      muzzleFlash(mm.x, GUN_Y, mm.z, 0xffc040);
+      // 後座力：把實際槍口踢偏，方向大多延續上一發
+      if (Math.random() < 0.3) p.kickSign *= -1;
+      p.recoil = Math.max(-0.45, Math.min(0.45, p.recoil + cst.kick * DEG * p.kickSign * (0.6 + Math.random() * 0.4)));
+      p.vx -= p.fx * cst.kick * 0.35; p.vz -= p.fz * cst.kick * 0.35;
+      addTrauma(0.03 + cst.kick * 0.012);
       sfx.shoot();
-      p.ammo--;
-      alertNoise(wpn.noise);
-      if (p.ammo <= 0) startReload();   // 打空自動換彈
+      cs.ammo--;
+      alertNoise(cst.noise);
+      if (cs.ammo <= 0) startReload();   // 打空自動換彈
       updateAmmoHud();
     }
   }
 
-  if (p.reloadT > 0) setBar(p.bar, p.x, 1.95, p.z, 1 - p.reloadT / wpn.reload);
+  if (cs.reloadT > 0) setBar(p.bar, p.x, 1.95, p.z, 1 - cs.reloadT / cst.reload);
+  else if (p.swapT > 0) setBar(p.bar, p.x, 1.95, p.z, 1 - p.swapT / p.swapDur);
   else p.bar.g.visible = false;
 
   if (p.inv > 0) p.inv -= dt;
   p.man.root.visible = p.inv > 0 ? Math.floor(p.inv * 18) % 2 === 0 : true;
   p.man.root.position.set(p.x, 0, p.z);
-  p.man.body.rotation.y = Math.atan2(p.fx, p.fz);
-  animateMan(p.man, Math.min(1, Math.hypot(p.vx, p.vz) / 5.6), dt, aiming && p.reloadT <= 0);
-  if (p.reloadT > 0) p.man.gun.rotation.x = 0.7; else p.man.gun.rotation.x = 0;
+  p.man.body.rotation.y = actA;
+  const busy = cs.reloadT > 0 || p.swapT > 0;
+  animateMan(p.man, Math.min(1, Math.hypot(p.vx, p.vz) / 5.6), dt, aiming && !busy);
+  p.man.gun.rotation.x = busy ? 0.7 : 0;
 
   // 走進出口
   if (level.doorOpen && level.grid[tileR(p.z)]?.[tileC(p.x)] === 'D') nextLevel();
@@ -716,9 +811,9 @@ function killPlayer() {
   const p = player;
   p.alive = false;
   p.man.root.visible = false;
-  p.laser.g.visible = false;
+  p.laser.g.visible = p.guide.g.visible = false;
   p.bar.g.visible = false;
-  burst(p.x, 0.9, p.z, [0x2f8cff, 0x23324d, 0xf0c9a0, 0x1f5fa8, 0x1a1a1a], 22, 6);
+  voxelBurst(p.man.root, 80, 5);
   sparks(p.x, 1, p.z, 0xff3030, 20);
   sfx.die();
   slowMo = 1.1;
@@ -735,23 +830,33 @@ function killPlayer() {
 // ---------- 敵人 ----------
 // mag = 幾發後要換彈；seekCover = 換彈時躲到玩家看不到的地方；react = 發現玩家後幾秒才行動
 const ETYPES = {
-  R: { hp: 2, r: 0.36, speed: 4.1, shirt: 0xd8433b, pants: 0x4a1c1c, helmet: null, scale: 1, gun: false, react: 0.45 },
-  S: { hp: 3, r: 0.36, speed: 2.6, shirt: 0xe0892a, pants: 0x3a3022, helmet: 0x6b4a1f, scale: 1, gun: true,
-    mag: 6, reload: 1.7, seekCover: true, aimTime: 0.85, react: 0.55 },
-  H: { hp: 9, r: 0.48, speed: 1.7, shirt: 0x7b4fcf, pants: 0x2b2240, helmet: 0x3a2a66, scale: 1.3, gun: true,
-    mag: 2, reload: 2.4, seekCover: false, aimTime: 1.1, react: 0.75 },
+  R: { hp: 70, r: 0.36, speed: 4.1, shirt: 0xd8433b, pants: 0x4a1c1c, helmet: null, scale: 1, gun: false, react: 0.45 },
+  S: { hp: 100, r: 0.36, speed: 2.6, shirt: 0xe0892a, pants: 0x3a3022, helmet: 0x6b4a1f, scale: 1, gun: true,
+    mag: 6, reload: 1.7, seekCover: true, aimTime: 0.85, react: 0.55,
+    build: { caliber: '556', receiver: 'carbine', stock: 'fold', mag: 'std', barrel: 'std', grip: 'none' } },
+  H: { hp: 320, r: 0.48, speed: 1.7, shirt: 0x7b4fcf, pants: 0x2b2240, helmet: 0x3a2a66, scale: 1.3, gun: true,
+    mag: 2, reload: 2.4, seekCover: false, aimTime: 1.1, react: 0.75,
+    build: { caliber: '9mm', receiver: 'smg', stock: 'full', mag: 'drum', barrel: 'long', grip: 'vert' } },
 };
+const enemyGuns = {};   // 每種敵人的槍只算一次方塊
+const enemyGunOf = type => enemyGuns[type] ??= buildWeapon(ETYPES[type].build);
 const enemies = [];
 function spawnEnemy(type, x, z, loop, aware) {
   const def = ETYPES[type];
   const man = makeBlockMan({ shirt: def.shirt, pants: def.pants, helmet: def.helmet, scale: def.scale, skin: 0xd9b48c });
-  man.gun.visible = def.gun;
+  let muzzleFwd = 0.67;
+  if (def.gun) {
+    const w = enemyGunOf(type);
+    man.gun.add(buildVoxelMesh(w.set, man.mats.main, WEAPON_PAL));
+    man.gun.position.y = GUN_Y - w.muzzleY;
+    muzzleFwd = 0.22 + w.muzzleZ;
+  }
   man.root.position.set(x, 0, z);
   scene.add(man.root);
   // 沒察覺的敵人隨機朝向
   const a = aware ? 0 : Math.floor(Math.random() * 4) * Math.PI / 2;
   const e = {
-    type, def, man, x, z, vx: 0, vz: 0, hp: def.hp + loop, r: def.r,
+    type, def, man, x, z, vx: 0, vz: 0, hp: def.hp * (1 + loop * 0.2), r: def.r, muzzleFwd,
     fx: Math.sin(a), fz: Math.cos(a), state: 'idle', t: 0.7 + Math.random() * 0.6, ax: 0, az: 1, lx: 0, lz: 1,
     aware, react: -1, ammo: def.mag || 0, coverPath: null,
     burstLeft: 0, strafe: Math.random() < 0.5 ? -1 : 1, flash: 0,
@@ -781,7 +886,8 @@ function alertNoise(range) {
 }
 
 function damageEnemy(e, b) {
-  e.hp -= b.dmg;
+  const f = b.traveled / b.range;
+  e.hp -= b.dmg * (f < 0.6 ? 1 : 1 - (f - 0.6) / 0.4 * 0.5);
   e.flash = 0.07;
   const kb = e.type === 'H' ? 1.2 : 3.2;
   e.vx += b.dx * kb; e.vz += b.dz * kb;
@@ -804,11 +910,8 @@ function killEnemy(e, dx, dz) {
   const i = enemies.indexOf(e);
   if (i < 0) return;
   enemies.splice(i, 1);
+  voxelBurst(e.man.root, e.type === 'H' ? 70 : 45, 4, dx * 4, dz * 4);   // 身上的方塊往子彈方向噴
   freeEnemy(e);
-  const cols = [e.def.shirt, e.def.pants, 0xd9b48c];
-  if (e.def.helmet) cols.push(e.def.helmet);
-  const n = e.type === 'H' ? 26 : 16;
-  burst(e.x + dx * 0.2, 0.9, e.z + dz * 0.2, cols, n, 5, dx * 4, dz * 4);   // 碎片往子彈方向噴
   sparks(e.x, 1, e.z, 0xffd060, 12);
   sfx.kill();
   hitStop = Math.max(hitStop, e.type === 'H' ? 0.09 : 0.055);
@@ -912,7 +1015,7 @@ function updateEnemies(dt) {
         case 'fire': {
           faceX = e.ax; faceZ = e.az;
           if (e.t <= 0 && e.burstLeft > 0) {
-            const m = muzzleOf(e.x, e.z, e.ax, e.az, e.def.scale);
+            const m = muzzleOf(e.x, e.z, e.ax, e.az, e.def.scale, e.muzzleFwd);
             if (heavy) {
               for (let k = 0; k < 7; k++) {
                 const a = Math.atan2(e.ax, e.az) + (k - 3) * 0.11 + (Math.random() - 0.5) * 0.04;
@@ -962,7 +1065,7 @@ function updateEnemies(dt) {
       }
       if (e.laser) {
         if (laserOn) {
-          const m = muzzleOf(e.x, e.z, e.ax, e.az, e.def.scale);
+          const m = muzzleOf(e.x, e.z, e.ax, e.az, e.def.scale, e.muzzleFwd);
           let len = castRay(m.x, m.z, e.ax, e.az, 22);
           if (player.alive) len = Math.min(len, rayCircle(m.x, m.z, e.ax, e.az, player.x, player.z, player.r));
           const locked = e.t <= 0.25;
@@ -1033,7 +1136,7 @@ function nextLevel() {
   const last = level.mode === 'breach' && level.index + 1 >= BREACH_LEVELS.length;
   if (last) {
     state = 'complete';
-    player.laser.g.visible = false;
+    player.laser.g.visible = player.guide.g.visible = false;
     showPanel('任務完成', `${BREACH_LEVELS.length} 個破門關卡全部清除`, [
       { label: '再玩一次', primary: true, run: () => startGame('breach', 0) },
       { label: '回主選單', run: showMenu },
@@ -1041,7 +1144,7 @@ function nextLevel() {
     return;
   }
   state = 'transition';
-  player.laser.g.visible = false;
+  player.laser.g.visible = player.guide.g.visible = false;
   fadeEl.style.opacity = 1;
   setTimeout(() => {
     if (level.mode === 'breach') player.hits = 0;   // 破門模式每關重新給 3 次
@@ -1075,17 +1178,19 @@ function updateHud() {
   updateAmmoHud();
 }
 
-const ammoEl = $('ammo'), ammoPips = $('ammoPips'), reloadFill = $('reloadBar').firstElementChild;
-function buildAmmoHud() {
-  ammoPips.innerHTML = '';
-  for (let i = 0; i < player.weapon.mag; i++) ammoPips.appendChild(document.createElement('i'));
-  updateAmmoHud();
-}
+const ammoEl = $('ammo'), ammoFill = $('ammoBar').firstElementChild, swapBtn = $('swapBtn');
 function updateAmmoHud() {
-  const p = player;
-  [...ammoPips.children].forEach((el, i) => el.classList.toggle('spent', i >= p.ammo));
-  ammoEl.classList.toggle('reloading', p.reloadT > 0);
-  ammoEl.classList.toggle('low', p.ammo <= Math.ceil(p.weapon.mag / 4));
+  const p = player, s = curSlot();
+  if (!s) return;
+  const st = s.stats, other = p.slots[p.cur ^ 1];
+  const reloading = s.reloadT > 0;
+  $('wName').textContent = st.name;
+  $('ammoNum').textContent = reloading ? 'RELOAD' : `${s.ammo}/${st.mag}`;
+  ammoFill.style.width = (reloading ? (1 - s.reloadT / st.reload) : s.ammo / st.mag) * 100 + '%';
+  ammoEl.classList.toggle('reloading', reloading);
+  ammoEl.classList.toggle('low', !reloading && s.ammo <= Math.ceil(st.mag / 4));
+  $('wAlt').textContent = other ? `${other.stats.name} ${other.ammo}/${other.stats.mag}` : '';
+  swapBtn.classList.toggle('busy', p.swapT > 0);
 }
 
 function showToast(text, cls) {
@@ -1129,10 +1234,14 @@ const HELP_HTML = `<div class="keys">
 <b>手機</b><br>
 左半邊拖曳：移動<br>
 右半邊拖曳：雷射瞄準，推過虛線圈：開火<br>
-右半邊快速點一下：換彈<br><br>
+右半邊快速點一下：換彈<br>
+左上角 ⇄ 按鈕：切換武器<br><br>
 <b>電腦</b><br>
 WASD 移動・滑鼠瞄準・左鍵開火<br>
-R 換彈・Esc 暫停<br><br>
+R 換彈・Q 或滾輪切換武器・Esc 暫停<br><br>
+<b>武器</b><br>
+淡白線＝你想瞄的方向，雷射＝槍口實際方向<br>
+越重的槍轉得越慢、切換也越慢<br><br>
 <b>破門</b><br>
 貼著木門往前推＝踹門，觸發慢動作<br>
 也可以把門打爛，但沒有慢動作<br>
@@ -1143,7 +1252,7 @@ R 換彈・Esc 暫停<br><br>
 const MENU_ITEMS = [
   { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
   { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
-  { label: '武器與裝備', sub: '即將開放', disabled: true },
+  { label: '武器與裝備', sub: () => player.slots.map(s => s.stats.name).join(' ＋ '), run: showLoadout },
   { label: '操作說明', sub: '搖桿、換彈、破門', run: () => showPanel('操作說明', HELP_HTML, [{ label: '返回', primary: true, run: hidePanel }]) },
 ];
 function buildMenu() {
@@ -1153,9 +1262,18 @@ function buildMenu() {
     const el = document.createElement('button');
     el.className = 'btn' + (i === 0 ? ' primary' : '');
     el.disabled = !!it.disabled;
-    el.innerHTML = `${it.label}<small>${it.sub || ''}</small>`;
+    el.innerHTML = `${it.label}<small>${(typeof it.sub === 'function' ? it.sub() : it.sub) || ''}</small>`;
     el.addEventListener('click', () => { unlockAudio(); sfx.click(); it.run(); });
     box.appendChild(el);
+  });
+}
+
+function showLoadout() {
+  menuEl.classList.add('hidden');
+  openLoadout(lo => {
+    equipLoadout(lo);
+    buildMenu();
+    menuEl.classList.remove('hidden');
   });
 }
 
@@ -1169,6 +1287,7 @@ function showMenu() {
 }
 
 $('pauseBtn').addEventListener('click', pauseGame);
+swapBtn.addEventListener('pointerdown', e => { e.preventDefault(); input.swapPressed = true; });
 addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
 const input = new Input(container);
@@ -1178,6 +1297,7 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 
 window.__dbg = { player, enemies, bullets, get level() { return level; }, startGame };  // 除錯用
 
+equipLoadout(loadLoadout());
 buildMenu();
 showMenu();
 
@@ -1206,6 +1326,7 @@ function frame(t) {
   }
   if (dt > 0) updateParticles(dt);
   input.reloadPressed = false;
+  input.swapPressed = false;
 
   // 出口閃爍
   for (const m of level.exitMeshes) m.material.opacity = 0.35 + Math.sin(now * 6) * 0.2;
