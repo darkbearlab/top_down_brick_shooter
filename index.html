@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d12">
+<title>Brick Shooter</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud">
+  <div id="hits"></div>
+  <div id="room">ROOM 1</div>
+</div>
+<div id="flash"></div>
+<div id="fade"></div>
+
+<div id="sticks">
+  <div class="stick" id="stickL"><div class="knob"></div></div>
+  <div class="stick" id="stickR"><div class="ring"></div><div class="knob"></div></div>
+</div>
+
+<div id="overlay">
+  <h1 id="ovTitle">BRICK SHOOTER</h1>
+  <p id="ovText">被擊中 3 次就死<br>清光房間，走進綠色出口</p>
+  <p id="ovHint" class="hint">點擊開始</p>
+  <p class="controls">手機：左半邊移動 ・ 右半邊瞄準，推到底開火<br>電腦：WASD 移動 ・ 滑鼠瞄準 ・ 左鍵開火</p>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
