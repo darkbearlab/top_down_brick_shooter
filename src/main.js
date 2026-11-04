@@ -5,6 +5,7 @@ import { loadLoadout, openLoadout } from './loadout.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
 import { openEditor } from './editor.js';
 import { openMissionSetup, playRandom } from './missionsetup.js';
+import { openCharEdit } from './charedit.js';
 import { updateSwingDoors } from './swingdoors.js';
 import { setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
 import { debris, fx, markers, setWallTest, updateMarkers, updateParticles } from './fx.js';
@@ -186,6 +187,7 @@ export const MENU_ITEMS = [
   ] },
   { label: '自訂戰鬥', sub: CUSTOM_LEVELS.length ? `${CUSTOM_LEVELS.length} 個關卡・用編輯器做的` : '還沒有關卡', run: showCustomList },
   { label: '關卡編輯器', sub: '擺物件、測試、複製 JSON（建議用電腦）', run: openEditor },
+  { label: '角色工坊', sub: '用方塊一顆顆堆出自己的角色（電腦操作）', run: () => openCharEdit() },
   { label: '武器與裝備', sub: () => player.slots.map(s => s.stats.name).join(' ＋ '), run: showLoadout },
   { label: '操作說明', sub: '搖桿、換彈、破門', run: () => showPanel('操作說明', HELP_HTML, [{ label: '返回', primary: true, run: hidePanel }]) },
 ];
@@ -247,6 +249,7 @@ function showCustomList() {
 
 export function showMenu() {
   $('genSetup').classList.add('hidden');
+  $('charEdit').classList.add('hidden');
   $('previewBar').classList.add('hidden');
   $('editor').classList.add('hidden');
   hidePanel();

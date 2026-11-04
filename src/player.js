@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
+import { loadPlayerLook } from './character.js';
 import { makeBlockMan, animateMan, setFlash, setHand } from './models.js';
 import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
@@ -12,7 +13,7 @@ import { flashEl, showToast, leaveLabel, leaveLevel, nextLevel, retryLevel, show
 
 // ---------- 玩家 ----------
 export const player = {
-  man: makeBlockMan({ shirt: 0x2f8cff, pants: 0x23324d, helmet: 0x1f5fa8 }),
+  man: makeBlockMan({ look: loadPlayerLook() }),
   x: 0, z: 0, vx: 0, vz: 0, r: 0.33, fx: 0, fz: -1,
   aimA: Math.PI, recoil: 0, kickSign: 1,   // aimA = 實際槍口角度；recoil = 後座力造成的偏移
   hits: 0, inv: 0, fireCd: 0, alive: true, kick: 0,
