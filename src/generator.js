@@ -1,13 +1,13 @@
 // ---------- 隨機任務：產生關卡 ----------
-// 用 BSP 把地圖一直切成房間，每條切線上開門（破門 B / 推門 d / 門洞），
+// 用 BSP 把地圖一直切成房間，每條切線上開門（推門 d / 門洞為主，少量破門 B），
 // 再擺掩體、敵人、任務目標；同一個種子一定產生同一張圖
 // 回傳的格式和 rooms.js 的關卡一樣（map 是一行一個字串的陣列）
 
 export const GEN_SIZES = {
-  S: { name: '小', w: 15, h: 19, room: 6 },
-  M: { name: '中', w: 21, h: 27, room: 7 },
-  L: { name: '大', w: 29, h: 35, room: 8 },
-  XL: { name: '特大', w: 41, h: 45, room: 9 },
+  S: { name: '小', w: 17, h: 21, room: 8 },
+  M: { name: '中', w: 23, h: 29, room: 9 },
+  L: { name: '大', w: 31, h: 37, room: 10 },
+  XL: { name: '特大', w: 43, h: 47, room: 11 },
 };
 // 每多少格地板放一個敵人
 export const GEN_DENSITY = {
@@ -33,7 +33,7 @@ function mulberry32(a) {
   };
 }
 
-const MIN = 3;   // 房間內部最小寬度
+const MIN = 5;   // 房間內部最小寬度（每邊至少 5 格）
 
 // opts: { size, enemies, goals: [...], env: 'lit'|'dark'|'mixed', seed }
 export function generateLevel(opts) {
@@ -80,7 +80,6 @@ export function generateLevel(opts) {
 
   // ---- 每條切線開門（子房間的牆先畫好，才不會開在 T 字路口） ----
   const doors = [];
-  const doorType = () => { const v = rnd(); return v < 0.45 ? 'B' : v < 0.85 ? 'd' : '.'; };
   for (const sp of splits) {
     const cands = [];
     for (let t = sp.a + 1; t < sp.b; t++) {
@@ -97,10 +96,15 @@ export function generateLevel(opts) {
     for (const [c, r] of cands) {
       if (made.length >= n) break;
       if (made.some(([mc, mr]) => Math.abs(mc - c) + Math.abs(mr - r) < 4)) continue;
-      g[r][c] = doorType();
+      g[r][c] = 'd';
       made.push([c, r]);
       doors.push({ c, r, vert: sp.vert });
     }
+  }
+  // 照比例分配門的種類：大部分是推門和門洞（敵人聽到槍聲才過得來），破門少量點綴
+  {
+    const n = doors.length, nB = Math.round(n * 0.12), nO = Math.round(n * 0.28);
+    shuffle(doors).forEach((o, i) => { g[o.r][o.c] = i < nB ? 'B' : i < nB + nO ? '.' : 'd'; });
   }
   const nearDoor = (c, r, d = 1) => doors.some(o => Math.abs(o.c - c) <= d && Math.abs(o.r - r) <= d);
 
