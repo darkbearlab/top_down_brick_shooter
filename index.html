@@ -83,9 +83,12 @@
       <div id="edPalette"></div>
       <div id="edWire" class="ed-pal-row"></div>
       <div id="edHint"></div>
-      <div class="ed-keys">左鍵畫・右鍵擦掉・數字鍵 1–9 換線路・滾輪捲動</div>
+      <div class="ed-keys">左鍵畫・右鍵擦掉・數字鍵 1–9 換線路<br>中鍵拖曳或按住空白鍵拖曳：移動畫面<br>滾輪捲動・Ctrl + 滾輪縮放</div>
     </div>
-    <div class="ed-center"><div id="edGridWrap"><div id="edGrid"></div></div></div>
+    <div class="ed-center">
+      <div id="edGridWrap"><div id="edGrid"></div></div>
+      <div class="ed-zoom"><button id="edZoomOut">－</button><button id="edZoomFit"><span id="edZoomLabel">符合畫面</span></button><button id="edZoomIn">＋</button></div>
+    </div>
     <div class="ed-right">
       <div id="edWarn"></div>
       <section>
@@ -104,7 +107,7 @@
             <label>場上上限<input type="number" id="edWave_max" min="1" max="40"></label>
           </div>
         </div>
-        <div class="ed-size">地圖大小 寬 <input type="number" id="edW" min="7" max="25"> 高 <input type="number" id="edH" min="7" max="40">
+        <div class="ed-size">地圖大小 寬 <input type="number" id="edW" min="7" max="60"> 高 <input type="number" id="edH" min="7" max="60">
           <button id="edResize" class="chip">套用</button></div>
       </section>
       <section>

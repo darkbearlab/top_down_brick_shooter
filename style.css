@@ -171,7 +171,15 @@ html, body {
 .ed-left, .ed-right { overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 .ed-left { grid-area: left; border-right: 1px solid rgba(255,255,255,.08); }
 .ed-right { grid-area: right; border-left: 1px solid rgba(255,255,255,.08); }
-.ed-center { grid-area: center; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.ed-center { grid-area: center; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; position: relative; min-width: 0; min-height: 0; }
+#edGridWrap.grab { cursor: grab; }
+#edGridWrap.grab .ed-cell { cursor: grab; }
+#edGridWrap.panning, #edGridWrap.panning .ed-cell { cursor: grabbing; }
+.ed-zoom { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 4px; z-index: 2; }
+.ed-zoom button {
+  min-width: 32px; height: 30px; padding: 0 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 800;
+  color: #e8ecf2; background: rgba(20,24,32,.9); border: 1px solid rgba(255,255,255,.18);
+}
 #edName, #editor select, #editor input[type=number], #edJson {
   font: inherit; color: #e8ecf2; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); border-radius: 8px; padding: 7px 10px;
 }

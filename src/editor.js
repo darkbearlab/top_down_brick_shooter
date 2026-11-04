@@ -6,6 +6,7 @@ import { mapRows } from './world.js';
 import { previewLevel, testLevel, showMenu, hidePanel } from './main.js';
 
 const KEY = 'brickshooter.editor.v1';
+const MAX_SIZE = 60;   // 地圖寬高上限
 const $ = id => document.getElementById(id);
 
 // 調色盤：ch = 地圖字元；wire = 接在開關上的物件（地圖上存成 '*'，輸出時換成數字）
@@ -136,7 +137,7 @@ function prettyJson(def) {
 }
 
 function resizeDoc(d, w, h) {
-  w = Math.max(7, Math.min(25, w | 0)); h = Math.max(7, Math.min(40, h | 0));
+  w = Math.max(7, Math.min(MAX_SIZE, w | 0)); h = Math.max(7, Math.min(MAX_SIZE, h | 0));
   const old = d.grid;
   d.grid = Array.from({ length: h }, (_, r) => Array.from({ length: w }, (_, c) => old[r]?.[c] ?? '.'));
   for (const key of Object.keys(d.wires)) { const [r, c] = key.split(',').map(Number); if (r >= h || c >= w) delete d.wires[key]; }
@@ -146,6 +147,8 @@ function resizeDoc(d, w, h) {
 
 // ---------- 狀態 ----------
 let doc = null, tool = { ch: '#' }, wireGroup = 1, painting = false, erasing = false, lastCell = null, built = false;
+let zoom = null;            // 每格幾 px；null = 自動塞滿畫面
+let pan = null, spaceDown = false;   // 拖曳檢視
 
 function loadDraft() {
   try { const d = JSON.parse(localStorage.getItem(KEY)); if (d?.grid) return d; } catch { /* 沒存過就開新的 */ }
@@ -213,8 +216,34 @@ function build() {
   };
 
   const grid = $('edGrid');
+  // 拖曳檢視：中鍵拖曳，或按住空白鍵再用左鍵拖曳
+  const wrap = $('edGridWrap');
+  wrap.addEventListener('pointerdown', e => {
+    if (e.button !== 1 && !(e.button === 0 && spaceDown)) return;
+    e.preventDefault(); e.stopPropagation();
+    pan = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop };
+    wrap.classList.add('panning');
+  }, true);
+  addEventListener('pointermove', e => {
+    if (!pan) return;
+    wrap.scrollLeft = pan.sl - (e.clientX - pan.x);
+    wrap.scrollTop = pan.st - (e.clientY - pan.y);
+  });
+  addEventListener('pointerup', () => { if (pan) { pan = null; wrap.classList.remove('panning'); } });
+  wrap.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // 不要瀏覽器的自動捲動
+  // Ctrl + 滾輪縮放
+  wrap.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    setZoom(cellSize() * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+  }, { passive: false });
+  $('edZoomIn').onclick = () => setZoom(cellSize() * 1.25);
+  $('edZoomOut').onclick = () => setZoom(cellSize() / 1.25);
+  $('edZoomFit').onclick = () => setZoom(null);
+
   // 左鍵畫、右鍵擦掉（畫成地板）
   grid.addEventListener('pointerdown', e => {
+    if (pan) return;
     const cell = e.target.closest('.ed-cell');
     if (!cell) return;
     e.preventDefault();
@@ -227,10 +256,20 @@ function build() {
     if (el) apply(el);
   });
   addEventListener('pointerup', () => { if (painting) { painting = false; erasing = false; saveDraft(); renderMeta(); } });
-  // 數字鍵換線路（在輸入框打字時不算）
+  // 數字鍵換線路、空白鍵按住拖曳（在輸入框打字時不算）
   addEventListener('keydown', e => {
-    if ($('editor').classList.contains('hidden') || e.target.closest('input, textarea, select')) return;
+    if ($('editor').classList.contains('hidden') || e.target.closest?.('input, textarea, select')) return;
     if (e.key >= '1' && e.key <= '9') { wireGroup = +e.key; renderTools(); }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur();   // 不要觸發剛點過的按鈕
+      spaceDown = true; wrap.classList.add('grab');
+    }
+  });
+  addEventListener('keyup', e => {
+    if (e.code !== 'Space') return;
+    spaceDown = false; wrap.classList.remove('grab');
+    if (!$('editor').classList.contains('hidden') && !e.target.closest?.('input, textarea, select')) e.preventDefault();
   });
   addEventListener('resize', () => { if (!$('editor').classList.contains('hidden')) renderGrid(); });
 
@@ -259,7 +298,7 @@ function build() {
 }
 
 function changed() { saveDraft(); renderMeta(); }
-function afterLoad() { saveDraft(); render(); }
+function afterLoad() { zoom = null; saveDraft(); render(); }
 
 function flash(text) {
   const el = $('edMsg');
@@ -306,11 +345,24 @@ function apply(el) {
 }
 
 // 格子大小：塞得進中間那欄就好，最大 40px
-function cellSize() {
+function fitSize() {
   const box = document.querySelector('#editor .ed-center');
   // 扣掉內距與格線（每格 1px）
   const aw = box.clientWidth - 30 - doc.w, ah = innerWidth > 900 ? box.clientHeight - 30 - doc.h : Infinity;
-  return Math.max(14, Math.min(40, Math.floor(aw / doc.w), Math.floor(ah / doc.h)));
+  return Math.max(12, Math.min(40, Math.floor(aw / doc.w), Math.floor(ah / doc.h)));
+}
+const cellSize = () => zoom ?? fitSize();
+
+// 縮放：以畫面中央為準，縮放後捲回同一個位置
+function setZoom(z) {
+  const wrap = $('edGridWrap'), old = cellSize();
+  const cx = (wrap.scrollLeft + wrap.clientWidth / 2) / (old + 1), cy = (wrap.scrollTop + wrap.clientHeight / 2) / (old + 1);
+  zoom = z === null ? null : Math.max(8, Math.min(48, Math.round(z)));
+  renderGrid();
+  const s = cellSize() + 1;
+  wrap.scrollLeft = cx * s - wrap.clientWidth / 2;
+  wrap.scrollTop = cy * s - wrap.clientHeight / 2;
+  $('edZoomLabel').textContent = zoom === null ? '符合畫面' : `${zoom}px`;
 }
 
 function drawCell(r, c) {
@@ -372,6 +424,7 @@ function render() {
   $('edWaveOn').checked = doc.wave.on;
   for (const k of ['count', 'every', 'brute', 'max']) $('edWave_' + k).value = doc.wave[k];
   $('edW').value = doc.w; $('edH').value = doc.h;
+  $('edZoomLabel').textContent = zoom === null ? '符合畫面' : `${zoom}px`;
   renderGrid();
   renderTools();
   renderMeta();
