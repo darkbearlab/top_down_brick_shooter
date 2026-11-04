@@ -1066,7 +1066,7 @@ function updateEnemies(dt) {
           const d = los ? { x: nx, z: nz } : navDir(e);
           wx = d.x * spd; wz = d.z * spd; faceX = d.x; faceZ = d.z;
           e.cd -= dt;
-          if (los && dist < 7.5 && dist > 1.4 && e.cd <= 0) {
+          if (los && dist < 5.5 && dist > 1.4 && e.cd <= 0) {
             e.state = 'wind'; e.t = 0.85; e.lx = nx; e.lz = nz; sfx.roar();
           }
           break;
@@ -1076,7 +1076,7 @@ function updateEnemies(dt) {
           if (e.t > 0.3) [e.lx, e.lz] = rotateToward(e.lx, e.lz, nx, nz, 2 * dt);
           faceX = e.lx; faceZ = e.lz;
           e.man.body.position.x = (Math.random() - 0.5) * 0.1;
-          if (e.t <= 0) { e.state = 'dash'; e.t = 0.65; e.man.body.position.x = 0; }
+          if (e.t <= 0) { e.state = 'dash'; e.t = 0.42; e.man.body.position.x = 0; }
           break;
         case 'dash': {
           e.vx = e.lx * 10.5 * e.speedMul; e.vz = e.lz * 10.5 * e.speedMul; direct = true; aiming = true;
@@ -1247,7 +1247,7 @@ function updateEnemies(dt) {
     }
     collide(e, e.r);
     // 巨型殭屍衝撞時撞到牆：暈一下（衝撞第一幀速度還沒起來，不算）
-    if (e.type === 'G' && e.state === 'dash' && e.t < 0.6 && Math.hypot(e.x - bx, e.z - bz) < 10.5 * dt * 0.35) {
+    if (e.type === 'G' && e.state === 'dash' && e.t < 0.38 && Math.hypot(e.x - bx, e.z - bz) < 10.5 * dt * 0.35) {
       e.state = 'recover'; e.t = 1.4; e.vx = -e.lx * 2; e.vz = -e.lz * 2;
       sfx.thud(); addTrauma(0.35);
       burst(e.x + e.lx * e.r, 1, e.z + e.lz * e.r, [0x3a4256, 0x8a96b0], 6, 3);
