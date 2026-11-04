@@ -64,6 +64,8 @@ html, body {
 #ammo.reloading #ammoNum { color: #5adcff; }
 #hud .btns { display: flex; gap: 6px; align-items: flex-start; }
 #handBtn, #room { white-space: nowrap; }
+#hud .info { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+#goal { font-size: 13px; font-weight: 800; color: #ffd060; white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
 #swapBtn, #handBtn {
   pointer-events: auto; align-self: flex-start; padding: 7px 10px; border-radius: 8px; cursor: pointer;
   border: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.35); color: #e8ecf2;

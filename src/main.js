@@ -95,11 +95,12 @@ const tileR = z => Math.floor(z + H / 2);
 function isWallTile(c, r) {
   if (c < 0 || r < 0 || c >= W || r >= H) return true;
   const ch = level.grid[r][c];
-  if (ch === '#') return true;
+  if (ch === '#' || ch === 'V' || ch === 'W') return true;
   if (ch === 'D') return !level.doorOpen;
-  if (ch === 'B') return !level.doors.get(c + r * W).open;
+  if (ch === 'B' || ch === '=') return !level.doors.get(c + r * W).open;
   return false;
 }
+const doorAt = (c, r) => (c >= 0 && r >= 0 && c < W && r < H) ? level.doors.get(c + r * W) : undefined;
 const wallAt = (x, z) => isWallTile(tileC(x), tileR(z));
 
 // 圓形 vs 方格牆，推出去
@@ -165,38 +166,44 @@ function hasLOS(ax, az, bx, bz) {
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // 從玩家所在格做 BFS，敵人看不到玩家時沿著它走；也拿來算槍聲傳多遠（關著的門會擋）
-let flow = new Int16Array(W * H), flowTimer = 0;
-function buildFlow() {
-  flow.fill(-1);
+// zflow 給殭屍用：關著的門也算走得通，殭屍會走到門前一直敲
+let flow = new Int16Array(W * H), zflow = new Int16Array(W * H), flowTimer = 0;
+function bfs(field, pass) {
+  field.fill(-1);
   const sc = tileC(player.x), sr = tileR(player.z);
   if (isWallTile(sc, sr)) return;
   const q = [sc + sr * W];
-  flow[q[0]] = 0;
+  field[q[0]] = 0;
   for (let i = 0; i < q.length; i++) {
-    const c = q[i] % W, r = (q[i] / W) | 0, d = flow[q[i]];
+    const c = q[i] % W, r = (q[i] / W) | 0, d = field[q[i]];
     for (const [dc, dr] of DIRS4) {
       const nc = c + dc, nr = r + dr;
-      if (isWallTile(nc, nr) || flow[nc + nr * W] !== -1) continue;
-      flow[nc + nr * W] = d + 1;
+      if (!pass(nc, nr) || field[nc + nr * W] !== -1) continue;
+      field[nc + nr * W] = d + 1;
       q.push(nc + nr * W);
     }
   }
 }
+function buildFlow() {
+  bfs(flow, (c, r) => !isWallTile(c, r));
+  bfs(zflow, (c, r) => !isWallTile(c, r) || doorAt(c, r)?.open === false);
+}
+const fieldAt = (field, c, r) => (c >= 0 && c < W && r >= 0 && r < H) ? field[c + r * W] : -1;
 const flowAt = (x, z) => {
   const c = tileC(x), r = tileR(z);
   return (c >= 0 && c < W && r >= 0 && r < H) ? flow[c + r * W] : -1;
 };
-function navDir(e) {
+function navDir(e, field = flow) {
   const c = tileC(e.x), r = tileR(e.z);
-  let best = null, bestD = flowAt(e.x, e.z);
+  let best = null, bestD = fieldAt(field, c, r);
   if (bestD < 0) bestD = 9999;
   for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
     if (!dc && !dr) continue;
     const nc = c + dc, nr = r + dr;
-    if (isWallTile(nc, nr)) continue;
-    if (dc && dr && (isWallTile(c + dc, r) || isWallTile(c, r + dr))) continue; // 不切牆角
-    const d = flow[nc + nr * W];
-    if (d >= 0 && d < bestD) { bestD = d; best = [nc, nr]; }
+    const d = fieldAt(field, nc, nr);
+    if (d < 0) continue;
+    if (dc && dr && (fieldAt(field, c + dc, r) < 0 || fieldAt(field, c, r + dr) < 0)) continue; // 不切牆角
+    if (d < bestD) { bestD = d; best = [nc, nr]; }
   }
   const tx = best ? toWorldX(best[0]) : player.x, tz = best ? toWorldZ(best[1]) : player.z;
   const dx = tx - e.x, dz = tz - e.z, d = Math.hypot(dx, dz) || 1;
@@ -259,6 +266,12 @@ function shadedBox(h, sideHex, topHex) {
 }
 const wallGeo = shadedBox(WALL_H, 0x3a4256, 0x8a96b0);
 const breachGeo = shadedBox(WALL_H * 0.92, 0x5a3a20, 0xa47a4a);
+const gateGeo = shadedBox(WALL_H * 0.95, 0x4c5462, 0xc8a438);    // 鐵捲門：頂面黃色
+const crackGeo = shadedBox(WALL_H, 0x4a4238, 0x8a7c66);           // 有裂痕的牆：巨型殭屍撞得破
+const ventGeo = shadedBox(WALL_H, 0x2c3140, 0x15171c);            // 通風口：殭屍從這裡爬出來
+const GATE_COLORS = [0x4c5462, 0xc8a438, 0x2a2e36];
+const WALL_COLORS = [0x4a4238, 0x8a7c66, 0x3a4256];
+const SWITCH_TIME = 0.9;
 const wallMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const doorMat = new THREE.MeshLambertMaterial({ color: 0x40242a, emissive: 0xff2040, emissiveIntensity: 0.35 });
 const exitMat = addMat(0x30ff90, 0.55);
@@ -271,17 +284,23 @@ function levelLabel() {
   return `${level.mode === 'dark' ? '黑暗' : '破門'} ${level.index + 1}/${defs.length}　${defs[level.index].name}`;
 }
 
-// 吊燈：燈具 + 不投影的點光源；l = 會閃
-const LAMP_R = 3.3;
+// 吊燈：燈具 + 不投影的點光源；l = 會閃；可以被子彈打掉，也可以接在開關上
+const LAMP_R = 3.3, LAMP_Y = 2.0;
+// 燈泡在高處，畫面上看起來的位置 = 子彈高度往後退一點；打燈泡用這個位置判定
+const LAMP_HIT_DZ = -(LAMP_Y - GUN_Y) / Math.tan(CAM_PITCH);
 const lampMat = addMat(0xffe2a8, 0.95);
-function addLamp(x, z, flicker) {
-  const light = new THREE.PointLight(0xffd9a0, 5, LAMP_R + 2, 1.3);
-  light.position.set(x, 2.3, z);
+const deadBulbMat = new THREE.MeshLambertMaterial({ color: 0x3a3a40 });
+function addLamp(x, z, flicker, group = null, powered = true) {
+  const light = new THREE.PointLight(0xffd9a0, 0, LAMP_R + 2, 1.3);
+  light.position.set(x, LAMP_Y, z);
   const bulb = new THREE.Mesh(FLASH_GEO, lampMat);
-  bulb.position.set(x, 2.3, z);
+  bulb.position.set(x, LAMP_Y, z);
   bulb.scale.setScalar(0.9);
-  level.group.add(light, bulb);
-  level.lamps.push({ x, z, light, bulb, flicker, on: 1, t: 0 });
+  const dead = new THREE.Mesh(FLASH_GEO, deadBulbMat);
+  dead.position.copy(bulb.position);
+  dead.scale.setScalar(0.7);
+  level.group.add(light, bulb, dead);
+  level.lamps.push({ x, z, light, bulb, dead, flicker, group, powered, broken: false, on: 1, t: 0, lit: false });
 }
 function updateLamps(dt) {
   for (const l of level.lamps) {
@@ -289,22 +308,239 @@ function updateLamps(dt) {
       l.t -= dt;
       if (l.t <= 0) { l.on = l.on ? 0 : 1; l.t = l.on ? 0.3 + Math.random() * 2.2 : 0.04 + Math.random() * 0.25; }
     }
-    l.light.intensity = 9 * l.on;
-    l.bulb.visible = !!l.on;
+    l.lit = !!l.on && l.powered && !l.broken;
+    l.light.intensity = l.lit ? 9 : 0;
+    l.bulb.visible = l.lit;
+    l.dead.visible = !l.lit && !l.broken;
+  }
+}
+function breakLamp(l) {
+  l.broken = true;
+  sparks(l.x, LAMP_Y, l.z, 0xffe2a8, 12);
+  burst(l.x, LAMP_Y, l.z, [0xd8dce4, 0x8a8f98], 4, 2);
+  sfx.glass();
+}
+
+// 鐵捲門：開關控制開 / 關；關的時候殭屍會一直敲，敲爛就關不起來了
+function addGate(c, r, x, z, group, open) {
+  const horiz = level.grid[r][c - 1] === '#' || level.grid[r][c + 1] === '#';
+  const m = new THREE.Mesh(gateGeo, wallMat);
+  m.scale.set(horiz ? 1 : 0.4, 1, horiz ? 0.4 : 1);
+  m.position.set(x, open ? -WALL_H * 0.42 : WALL_H * 0.475, z);
+  m.castShadow = m.receiveShadow = true;
+  level.group.add(m);
+  level.doors.set(c + r * W, { c, r, x, z, mesh: m, hp: 260, open, want: open, kind: 'gate', group, broken: false, colors: GATE_COLORS });
+}
+function updateGates(dt) {
+  for (const d of level.doors.values()) {
+    if (d.kind !== 'gate' || d.broken) continue;
+    if (d.want !== d.open) {
+      // 門下有人（玩家或殭屍）就等他離開再關
+      const minX = d.c - W / 2, minZ = d.r - H / 2;
+      const inside = o => o.x > minX - o.r && o.x < minX + 1 + o.r && o.z > minZ - o.r && o.z < minZ + 1 + o.r;
+      if (d.want || !((player.alive && inside(player)) || enemies.some(inside))) {
+        d.open = d.want;
+        sfx.gate();
+        buildFlow();
+      }
+    }
+    const ty = d.open ? -WALL_H * 0.42 : WALL_H * 0.475;
+    d.mesh.position.y += (ty - d.mesh.position.y) * (1 - Math.exp(-10 * dt));
+  }
+}
+
+// 殭屍推門：門擋在前面就一直敲，敲爛為止
+function bangDoor(e, dx, dz, dps, dt) {
+  const d = doorAt(tileC(e.x + dx * (e.r + 0.25)), tileR(e.z + dz * (e.r + 0.25)));
+  if (!d || d.open) return;
+  d.hp -= dps * dt;
+  d.bangT = (d.bangT ?? 0) - dt;
+  if (d.bangT <= 0) {
+    d.bangT = 0.3 + Math.random() * 0.3;
+    sfx.doorHit();
+    burst(d.x - dx * 0.4, 0.8, d.z - dz * 0.4, d.colors, 1, 2);
+  }
+  if (d.hp <= 0) destroyDoor(d, dx, dz);
+}
+function destroyDoor(d, dx, dz) {
+  d.broken = true;
+  breachDoor(d, false, dx, dz);
+}
+
+// 有裂痕的牆被巨型殭屍撞破
+function breakWall(c, r, dx, dz) {
+  level.grid[r][c] = '.';
+  const m = level.cracks.get(c + r * W);
+  if (m) level.group.remove(m);
+  const x = toWorldX(c), z = toWorldZ(r);
+  burst(x, 0.7, z, WALL_COLORS, 16, 5, dx * 6, dz * 6);
+  sfx.breach();
+  addTrauma(0.5);
+  buildFlow();
+  alertNoise(8);
+}
+
+// 開關：站上去一下就切換；要離開再站上去才會再切一次
+function addSwitch(x, z) {
+  const idx = level.switches.length;
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff5030, toneMapped: false });
+  const base = new THREE.Mesh(UNIT_BOX, new THREE.MeshLambertMaterial({ color: 0x2a2e36 }));
+  base.scale.set(0.62, 0.1, 0.62);
+  base.position.set(x, 0.05, z);
+  const lamp = new THREE.Mesh(UNIT_BOX, mat);
+  lamp.scale.set(0.34, 0.06, 0.34);
+  lamp.position.set(x, 0.12, z);
+  level.group.add(base, lamp);
+  level.switches.push({ x, z, mat, lamp, groups: level.def.switches?.[idx] ?? [], on: false, prog: 0, latched: false, bar: makeBar(0x40ff90) });
+}
+function updateSwitches(dt) {
+  for (const s of level.switches) {
+    const near = player.alive && Math.abs(player.x - s.x) < 0.5 && Math.abs(player.z - s.z) < 0.5;
+    if (near && !s.latched) {
+      s.prog += dt / SWITCH_TIME;
+      if (s.prog >= 1) { s.prog = 0; s.latched = true; flipSwitch(s); }
+    } else if (!near) { s.latched = false; s.prog = Math.max(0, s.prog - dt * 3); }
+    if (s.prog > 0) setBar(s.bar, s.x, 1.3, s.z, s.prog); else s.bar.g.visible = false;
+    s.mat.color.setHex(s.on ? 0x40ff90 : 0xff5030);
+    s.lamp.scale.y = 0.06 * (1 + 0.5 * Math.sin(now * 5));
+  }
+}
+function flipSwitch(s) {
+  s.on = !s.on;
+  sfx.switchOn();
+  for (const g of s.groups) {
+    for (const d of level.doors.values()) if (d.group === g) d.want = !d.want;
+    for (const l of level.lamps) if (l.group === g) l.powered = !l.powered;
+  }
+}
+
+// 通風口：持續冒出殭屍（撐住、撤離時）
+function startSpawner(cfg) {
+  level.spawner = { left: cfg.count ?? Infinity, every: cfg.every ?? 1.8, brute: cfg.brute ?? 0, max: cfg.max ?? 16, t: 0.5 };
+}
+function updateSpawner(dt) {
+  const sp = level.spawner;
+  if (!sp || sp.left <= 0 || !level.vents.length) return;
+  sp.t -= dt;
+  if (sp.t > 0 || enemies.length >= sp.max) return;
+  sp.t = sp.every * (0.7 + Math.random() * 0.6);
+  // 優先挑離玩家遠一點的通風口
+  const far = level.vents.filter(v => Math.hypot(v.sx - player.x, v.sz - player.z) > 4.5);
+  const v = (far.length ? far : level.vents)[Math.floor(Math.random() * (far.length || level.vents.length))];
+  const type = Math.random() < sp.brute ? 'G' : 'Z';
+  spawnEnemy(type, v.sx, v.sz, 0, true);
+  const e = enemies[enemies.length - 1];
+  e.state = 'chase'; e.t = 0;
+  burst(v.x, 0.9, v.z, [0x2c3140, 0x15171c], 3, 2);
+  if (now - lastGroan > 0.6) { lastGroan = now; type === 'G' ? sfx.roar() : sfx.groan(); }
+  sp.left--;
+}
+
+// 人質：雙手舉高站著；只有玩家的子彈會打到他
+function addHostage(x, z) {
+  const man = makeBlockMan({ shirt: 0xe8e4da, pants: 0x5a5a66, skin: 0xf0c9a0 });
+  man.root.position.set(x, 0, z);
+  man.armL.rotation.x = man.armR.rotation.x = -2.9;
+  level.group.add(man.root);
+  level.hostage = { man, x, z, r: 0.32, alive: true, saved: false };
+}
+function killHostage(dx, dz) {
+  const h = level.hostage;
+  h.alive = false;
+  voxelBurst(h.man.root, 60, 4, dx * 4, dz * 4);
+  level.group.remove(h.man.root);
+  sparks(h.x, 1, h.z, 0xff3030, 16);
+  sfx.die();
+  slowMo = 1.1;
+  state = 'failed';
+  player.laser.g.visible = player.guide.g.visible = false;
+  setTimeout(() => {
+    if (state !== 'failed') return;
+    showPanel('任務失敗', `${levelLabel()}<br>人質被你打中了`, [
+      { label: '重來這關', primary: true, run: retryLevel },
+      { label: '回主選單', run: showMenu },
+    ]);
+  }, 1100);
+}
+
+// 撤離物資：發光的箱子，拿到後出口打開、通風口開始冒殭屍
+const itemMat = addMat(0x40e0ff, 0.9);
+function addItem(x, z) {
+  const g = new THREE.Group();
+  const box = new THREE.Mesh(UNIT_BOX, new THREE.MeshLambertMaterial({ color: 0x2a3a48, emissive: 0x104050 }));
+  box.scale.set(0.5, 0.32, 0.36);
+  const glow = new THREE.Mesh(UNIT_BOX, itemMat);
+  glow.scale.set(0.56, 0.06, 0.42);
+  glow.position.y = 0.17;
+  g.add(box, glow);
+  g.position.set(x, 0.35, z);
+  level.group.add(g);
+  level.item = { x, z, g, taken: false };
+}
+
+// ---------- 關卡目標 ----------
+// clear 清光敵人、activate 開關全部打開、hold 撐住幾秒、extract 拿到物資撤離、rescue 清光敵人後碰到人質
+function updateObjectives(dt) {
+  const L = level, goal = L.goal;
+  if (state !== 'play') return;
+  if (L.item && !L.item.taken) {
+    L.item.g.position.y = 0.35 + Math.sin(now * 3) * 0.06;
+    L.item.g.rotation.y += dt * 1.5;
+    if (Math.hypot(player.x - L.item.x, player.z - L.item.z) < 0.6) {
+      L.item.taken = true;
+      L.group.remove(L.item.g);
+      sparks(L.item.x, 0.6, L.item.z, 0x40e0ff, 14);
+      sfx.reloadDone();
+      if (L.def.wave) startSpawner(L.def.wave);
+      openExit('撤離！');
+    }
+  }
+  const h = L.hostage;
+  if (h?.alive) {
+    // 玩家不能穿過人質
+    const dx = player.x - h.x, dz = player.z - h.z, d = Math.hypot(dx, dz), min = player.r + h.r;
+    if (d < min && d > 1e-4) { player.x = h.x + dx / d * min; player.z = h.z + dz / d * min; }
+    if (!h.saved && enemies.length === 0 && d < min + 0.35) {
+      h.saved = true;
+      h.man.armL.rotation.x = h.man.armR.rotation.x = 0;
+      sfx.reloadDone();
+      openExit('人質救出');
+    }
+  }
+  if (L.doorOpen) return;
+  if (goal === 'clear' && enemies.length === 0) openExit();
+  else if (goal === 'activate' && L.switches.length && L.switches.every(s => s.on)) openExit('全部啟動');
+  else if (goal === 'hold') {
+    L.holdT -= dt;
+    if (L.holdT <= 0) { L.holdT = 0; if (L.spawner) L.spawner.left = 0; openExit('撐住了！'); }
+  }
+}
+function goalText() {
+  const L = level;
+  if (!L || state === 'menu') return '';
+  if (L.doorOpen) return L.goal === 'hold' || L.goal === 'extract' ? '快跑到出口' : '前往出口';
+  switch (L.goal) {
+    case 'activate': return `打開開關 ${L.switches.filter(s => s.on).length}/${L.switches.length}`;
+    case 'hold': return `撐住 ${Math.ceil(L.holdT)} 秒`;
+    case 'extract': return '找到物資';
+    case 'rescue': return enemies.length ? `清除敵人・剩 ${enemies.length}` : '去碰人質';
+    default: return `清除敵人・剩 ${enemies.length}`;
   }
 }
 
 function loadLevel(mode, index) {
   clearEntities();
-  if (level) scene.remove(level.group);
+  if (level) { scene.remove(level.group); for (const s of level.switches) freeBar(s.bar); }
   const defs = levelDefs(mode);
   const def = defs[index % defs.length];
-  const grid = def.map.split('\n').map(s => s.trim());
+  const grid = def.map.split('\n').map(s => [...s.trim()]);
   H = grid.length; W = grid[0].length;
-  flow = new Int16Array(W * H);
+  flow = new Int16Array(W * H); zflow = new Int16Array(W * H);
   level = {
     group: new THREE.Group(), grid, doorOpen: false, doorMeshes: [], exitMeshes: [],
-    doors: new Map(), mode, index, dark: mode === 'dark', lamps: [],
+    doors: new Map(), mode, index, dark: mode === 'dark', lamps: [], def,
+    switches: [], vents: [], cracks: new Map(), spawner: null, hostage: null, item: null,
+    goal: def.goal ?? 'clear', holdT: def.hold ?? 0,
   };
   setLighting(level.dark);
   scene.add(level.group);
@@ -321,7 +557,29 @@ function loadLevel(mode, index) {
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
     const ch = grid[r][c] || '#';
     const x = toWorldX(c), z = toWorldZ(r);
+    if (ch >= '1' && ch <= '9') {
+      // 數字 = 接在開關上的東西，種類寫在關卡的 links
+      const kind = def.links?.[ch] ?? 'gate';
+      if (kind.startsWith('gate')) { grid[r][c] = '='; addGate(c, r, x, z, ch, kind === 'gateOpen'); }
+      else { grid[r][c] = '.'; addLamp(x, z, false, ch, kind === 'lampOn'); }
+      continue;
+    }
     if (ch === '#') walls.push([x, z]);
+    else if (ch === 'W' || ch === 'V') {
+      const m = new THREE.Mesh(ch === 'W' ? crackGeo : ventGeo, wallMat);
+      m.position.set(x, WALL_H / 2, z);
+      m.castShadow = m.receiveShadow = true;
+      level.group.add(m);
+      if (ch === 'W') level.cracks.set(c + r * W, m);
+      else {
+        // 殭屍從相鄰的地板格冒出來
+        const [dc, dr] = DIRS4.find(([dc, dr]) => '.PZGKLlX'.includes(grid[r + dr]?.[c + dc] ?? '#')) ?? [0, 0];
+        level.vents.push({ x, z, sx: toWorldX(c + dc), sz: toWorldZ(r + dr) });
+      }
+    }
+    else if (ch === 'K') addSwitch(x, z);
+    else if (ch === 'X') addItem(x, z);
+    else if (ch === 'Q') addHostage(x, z);
     else if (ch === 'D') {
       const m = new THREE.Mesh(wallGeo, doorMat);
       m.position.set(x, WALL_H / 2, z);
@@ -336,7 +594,7 @@ function loadLevel(mode, index) {
       m.position.set(x, WALL_H * 0.46, z);
       m.castShadow = m.receiveShadow = true;
       level.group.add(m);
-      level.doors.set(c + r * W, { c, r, x, z, mesh: m, hp: 130, open: false });
+      level.doors.set(c + r * W, { c, r, x, z, mesh: m, hp: 130, open: false, kind: 'breach', colors: WOOD });
     } else if (ch === 'P') { player.x = x; player.z = z; }
     else if ('RSHZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
     else if (ch === 'L' || ch === 'l') addLamp(x, z, ch === 'l');
@@ -349,6 +607,8 @@ function loadLevel(mode, index) {
 
   resetPlayer();
   buildFlow();
+  if (level.goal === 'hold' && def.wave) startSpawner(def.wave);
+  updateLamps(0);
   slowMo = 0; hitStop = 0;
   state = 'play';
   camTarget.set(player.x, 0, player.z - 1);
@@ -356,7 +616,7 @@ function loadLevel(mode, index) {
   updateHud();
 }
 
-function openExit() {
+function openExit(text = 'CLEAR') {
   level.doorOpen = true;
   for (const m of level.doorMeshes) {
     level.group.remove(m);
@@ -368,7 +628,7 @@ function openExit() {
     burst(m.position.x, 0.7, m.position.z, [0x40242a, 0xff2040], 6, 4);
   }
   sfx.door();
-  showToast('CLEAR', 'clear');
+  showToast(text, 'clear');
   buildFlow();
 }
 
@@ -377,7 +637,7 @@ function breachDoor(d, kicked, dx = 0, dz = 0) {
   if (d.open) return;
   d.open = true;
   level.group.remove(d.mesh);
-  burst(d.x, 0.7, d.z, WOOD, kicked ? 16 : 10, 5, dx * 7, dz * 7);
+  burst(d.x, 0.7, d.z, d.colors, kicked ? 16 : 10, 5, dx * 7, dz * 7);
   sparks(d.x, 0.9, d.z, 0xffd090, 8);
   sfx.breach();
   addTrauma(kicked ? 0.6 : 0.4);
@@ -517,6 +777,11 @@ function updateBullets(dt) {
           for (const e of enemies) {
             const ddx = e.x - b.x, ddz = e.z - b.z;
             if (ddx * ddx + ddz * ddz < (e.r + 0.08) ** 2) { b.dying = true; damageEnemy(e, b); break; }
+          }
+          const h = level.hostage;
+          if (!b.dying && h?.alive && (h.x - b.x) ** 2 + (h.z - b.z) ** 2 < (h.r + 0.06) ** 2) { b.dying = true; killHostage(b.dx, b.dz); }
+          for (const l of level.lamps) {
+            if (!l.broken && (l.x - b.x) ** 2 + (l.z + LAMP_HIT_DZ - b.z) ** 2 < 0.22 * 0.22) breakLamp(l);
           }
         } else if (player.alive && player.inv <= 0) {
           const ddx = player.x - b.x, ddz = player.z - b.z;
@@ -723,7 +988,7 @@ function updatePlayer(dt) {
   let kicking = null;
   if (ml > 0.5) {
     for (const d of level.doors.values()) {
-      if (d.open) continue;
+      if (d.open || d.kind === 'gate') continue;
       const minX = d.c - W / 2, minZ = d.r - H / 2;
       const dx = Math.max(minX, Math.min(p.x, minX + 1)) - p.x;
       const dz = Math.max(minZ, Math.min(p.z, minZ + 1)) - p.z;
@@ -1050,9 +1315,10 @@ function updateEnemies(dt) {
       if (e.stun > 0) e.stun -= dt;
       else if (e.state === 'recover') { if (e.t <= 0) e.state = 'chase'; }
       else if (player.alive) {
-        const d = los ? { x: nx, z: nz } : navDir(e);
+        const d = los ? { x: nx, z: nz } : navDir(e, zflow);
         const s = spd * (0.75 + 0.35 * Math.max(0, Math.sin(now * 3 + e.seed)));   // 一頓一頓地拖著走
         wx = d.x * s; wz = d.z * s; faceX = d.x; faceZ = d.z;
+        if (!los) bangDoor(e, d.x, d.z, 18, dt);
       }
       if (e.state !== 'recover' && e.stun <= 0 && player.alive && player.inv <= 0 && dist < e.r + player.r + 0.08) {
         hurtPlayer(nx, nz);
@@ -1063,8 +1329,9 @@ function updateEnemies(dt) {
       switch (e.state) {
         case 'idle': case 'chase': {
           if (!player.alive) break;
-          const d = los ? { x: nx, z: nz } : navDir(e);
+          const d = los ? { x: nx, z: nz } : navDir(e, zflow);
           wx = d.x * spd; wz = d.z * spd; faceX = d.x; faceZ = d.z;
+          if (!los) bangDoor(e, d.x, d.z, 70, dt);
           e.cd -= dt;
           if (los && dist < 5.5 && dist > 1.4 && e.cd <= 0) {
             e.state = 'wind'; e.t = 0.85; e.lx = nx; e.lz = nz; sfx.roar();
@@ -1248,7 +1515,14 @@ function updateEnemies(dt) {
     collide(e, e.r);
     // 巨型殭屍衝撞時撞到牆：暈一下（衝撞第一幀速度還沒起來，不算）
     if (e.type === 'G' && e.state === 'dash' && e.t < 0.38 && Math.hypot(e.x - bx, e.z - bz) < 10.5 * dt * 0.35) {
-      e.state = 'recover'; e.t = 1.4; e.vx = -e.lx * 2; e.vz = -e.lz * 2;
+      // 撞到裂牆或門就撞破，暈得比較短
+      const hc = tileC(e.x + e.lx * (e.r + 0.3)), hr = tileR(e.z + e.lz * (e.r + 0.3));
+      const door = doorAt(hc, hr);
+      let broke = true;
+      if (level.grid[hr]?.[hc] === 'W') breakWall(hc, hr, e.lx, e.lz);
+      else if (door && !door.open) destroyDoor(door, e.lx, e.lz);
+      else broke = false;
+      e.state = 'recover'; e.t = broke ? 0.6 : 1.4; e.vx = -e.lx * 2; e.vz = -e.lz * 2;
       sfx.thud(); addTrauma(0.35);
       burst(e.x + e.lx * e.r, 1, e.z + e.lz * e.r, [0x3a4256, 0x8a96b0], 6, 3);
     }
@@ -1282,7 +1556,7 @@ function isLit(x, z, rad = 0) {
     }
   }
   for (const l of level.lamps) {
-    if (l.on && Math.hypot(x - l.x, z - l.z) < LAMP_R + rad && hasLOS(l.x, l.z, x, z)) return true;
+    if (l.lit && Math.hypot(x - l.x, z - l.z) < LAMP_R + rad && hasLOS(l.x, l.z, x, z)) return true;
   }
   return false;
 }
@@ -1305,7 +1579,7 @@ let state = 'menu', hitStop = 0, slowMo = 0, trauma = 0, now = 0;
 const camTarget = new THREE.Vector3();
 const $ = id => document.getElementById(id);
 const flashEl = $('flash'), fadeEl = $('fade'), hudEl = $('hud');
-const menuEl = $('menu'), panelEl = $('panel'), toastEl = $('toast');
+const menuEl = $('menu'), panelEl = $('panel'), toastEl = $('toast'), goalEl = $('goal');
 
 function clearEntities() {
   for (const e of enemies) freeEnemy(e);
@@ -1440,7 +1714,12 @@ R 換彈・Q 或滾輪切換武器・Esc 暫停<br><br>
 <b>黑暗模式</b><br>
 手電筒照向槍口實際的方向，轉得慢的槍掃得也慢<br>
 黑暗中只看得到殭屍發光的眼睛，開槍的火光會短暫照亮四周<br>
-巨型殭屍蓄力後會衝撞，引牠去撞牆會暈一下
+巨型殭屍蓄力後會衝撞，引牠去撞牆會暈一下<br><br>
+<b>關卡機關</b><br>
+站在開關上一下：切換鐵捲門或燈<br>
+殭屍會一直敲門，敲爛的鐵捲門就關不起來了<br>
+有裂痕的牆擋不住巨型殭屍的衝撞<br>
+吊燈打得掉，打掉那一區就暗了
 </div>`;
 
 // 進入畫面的功能清單：之後新增功能只要加一筆
@@ -1492,7 +1771,7 @@ input.onFireStage = src => { if (src === 'touch') navigator.vibrate?.(8); };
 
 function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 
-window.__dbg = { player, enemies, bullets, get level() { return level; }, startGame };  // 除錯用
+window.__dbg = { player, enemies, bullets, get level() { return level; }, startGame, spawnBullet, killEnemy };  // 除錯用
 
 try { if (localStorage.getItem(HAND_KEY) === '-1') setHand(player.man, -1); } catch { /* 用預設右手 */ }
 equipLoadout(loadLoadout());
@@ -1523,15 +1802,20 @@ function frame(t) {
     updateEnemies(dt);
     updateBullets(dt);
     updateMarkers(dt);
-    if (state === 'play' && !level.doorOpen && enemies.length === 0) openExit();
+    updateSwitches(dt);
+    updateGates(dt);
+    updateSpawner(dt);
+    updateObjectives(dt);
   }
   if (dt > 0) updateParticles(dt);
   input.reloadPressed = false;
   input.swapPressed = false;
   input.handPressed = false;
 
+  updateLamps(raw);
+  const gt = goalText();
+  if (goalEl.textContent !== gt) goalEl.textContent = gt;
   if (level.dark) {
-    updateLamps(raw);
     if (dt > 0) muzzleGlow -= dt;
     const on = player.alive && state !== 'menu';
     const mm = playerMuzzle();
