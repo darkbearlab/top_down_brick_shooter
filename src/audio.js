@@ -59,6 +59,9 @@ export const sfx = {
   enemyReload() { noise(0.06, 0.12, 2600, 2); },
   breach() { tone('sawtooth', 130, 30, 0.6, 0.45); noise(0.5, 0.9, 500, 0.5); },
   doorHit() { noise(0.08, 0.3, 700, 1); },
+  groan() { tone('sawtooth', 95 + Math.random() * 40, 60, 0.55, 0.05); noise(0.45, 0.07, 280, 1.5); },
+  roar() { tone('sawtooth', 110, 40, 0.8, 0.22); noise(0.7, 0.35, 240, 0.6); },
+  thud() { tone('triangle', 90, 30, 0.35, 0.35); noise(0.25, 0.5, 350, 0.6); },
   alert() { tone('square', 900, 1400, 0.08, 0.07); },
   click() { tone('triangle', 700, 900, 0.05, 0.1); },
 };

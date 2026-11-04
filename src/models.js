@@ -79,6 +79,31 @@ export function animateMan(m, speed01, dt, aiming) {
   m.torso.position.y = 0.85 + Math.abs(Math.sin(m.walk)) * 0.04 * speed01;
 }
 
+// 黑暗中發光的眼睛：蓋在眼睛方塊上，外面再一層淡淡的光暈
+const EYE_GEO = new THREE.BoxGeometry(1, 1, 1);
+const eyeMats = new Map();
+const eyeMat = (color, opacity) => {
+  const k = color + ':' + opacity;
+  if (!eyeMats.has(k)) eyeMats.set(k, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  return eyeMats.get(k);
+};
+export function addGlowEyes(m, color) {
+  const g = new THREE.Group();
+  g.position.set(0, m.head.position.y + 2.5 * V, m.head.position.z + 2.1 * V);
+  for (const sx of [-1, 1]) {
+    const core = new THREE.Mesh(EYE_GEO, eyeMat(color, 1));
+    core.scale.setScalar(1.6 * V);
+    const halo = new THREE.Mesh(EYE_GEO, eyeMat(color, 0.35));
+    halo.scale.set(4.5 * V, 3.5 * V, V);
+    core.position.x = halo.position.x = sx * V;
+    g.add(core, halo);
+  }
+  m.body.add(g);
+  m.eyes = g;
+  return g;
+}
+
 // 受傷閃白
 export function setFlash(m, on) {
   for (const k in m.mats) m.mats[k].emissive.setHex(on ? 0xffffff : 0x000000);
