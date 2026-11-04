@@ -110,7 +110,9 @@ function rebuildView() {
       const P = LOOK_PARTS[p], [sw, sh, sd] = P.size, [cx, cy, cz, cw, chh, cd] = P.core;
       const space = boxEdges(sw * V, sh * V, sd * V, 0xffffff, 0.35);
       space.position.set(sw * V / 2, sh * V / 2, sd * V / 2);
-      const core = boxEdges(cw * V + 0.002, chh * V + 0.002, cd * V + 0.002, 0xff9a40, 0.9);
+      // 核心常常被包在裡面：框線畫在最上層，隔著方塊也看得到
+      const core = boxEdges(cw * V + 0.004, chh * V + 0.004, cd * V + 0.004, 0xff9a40, 1);
+      core.material.depthTest = false; core.renderOrder = 10;
       core.position.set((cx + cw / 2) * V, (cy + chh / 2) * V, (cz + cd / 2) * V);
       // 空間底面的格線
       const pts = [];

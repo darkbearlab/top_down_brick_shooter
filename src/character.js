@@ -1,19 +1,29 @@
 // ---------- 角色造型（look）：分部位的方塊資料 ----------
-// 每個部位有自己的格子空間（w × h × d，單位 1/16）和一塊「骨架核心」：
-// 核心的方塊刪不掉（只能換顏色），動作、碰撞、拿槍位置都以核心為準；
-// 空間裡其他地方隨便堆，跟著這個部位一起動
+// 每個部位有自己的格子空間（w × h × d，單位 1/16）和一顆「骨架核心」方塊：
+// 核心只是黏方塊的立足點，刪不掉（只能換顏色）；頭和身體的核心在中心，手腳的在肩膀 / 髖關節
+// 動作、碰撞、拿槍位置都跟方塊無關；空間裡其他地方隨便堆，跟著這個部位一起動
 // 座標：x 往角色的左手邊、y 往上、z 往前（角色面朝 +z）
 import { V, VoxelSet, buildVoxelMesh } from './voxel.js';
 
 // size = 空間大小；core = [x, y, z, w, h, d]；anchor = 空間裡對到掛載點的位置（格線座標）；
 // at = 掛載點在身體裡的位置；limb = 繞掛載點轉的四肢
 export const LOOK_PARTS = {
-  head: { name: '頭', size: [9, 10, 9], core: [2, 1, 2, 5, 5, 5], anchor: [4.5, 1, 4.5], at: [0, 1.3 - 2.5 * V, -0.5 * V] },
-  torso: { name: '身體', size: [12, 12, 11], core: [2, 1, 3, 8, 9, 5], anchor: [6, 5.5, 5.5], at: [0, 0.85, 0] },
-  armR: { name: '右手', size: [6, 10, 6], core: [2, 1, 2, 2, 7, 2], anchor: [3, 8, 3], at: [-0.3125, 1.08, 0], limb: true, twin: 'armL' },
-  armL: { name: '左手', size: [6, 10, 6], core: [2, 1, 2, 2, 7, 2], anchor: [3, 8, 3], at: [0.3125, 1.08, 0], limb: true, twin: 'armR' },
-  legR: { name: '右腳', size: [5, 10, 6], core: [1, 0, 1, 3, 9, 3], anchor: [2.5, 9, 2.5], at: [-0.125, 0.58, 0], limb: true, twin: 'legL' },
-  legL: { name: '左腳', size: [5, 10, 6], core: [1, 0, 1, 3, 9, 3], anchor: [2.5, 9, 2.5], at: [0.125, 0.58, 0], limb: true, twin: 'legR' },
+  // 頭跟身體一樣是雙數格寬（6 格），核心在正中間並排兩顆
+  head: { name: '頭', size: [10, 10, 9], core: [4, 3, 4, 2, 1, 1], anchor: [5, 1, 4.5], at: [0, 1.3 - 2.5 * V, -0.5 * V] },
+  // 身體寬 8 格，正中間在兩格之間：核心用並排兩顆，左右才對稱
+  torso: { name: '身體', size: [12, 12, 11], core: [5, 5, 5, 2, 1, 1], anchor: [6, 5.5, 5.5], at: [0, 0.85, 0] },
+  // 肩膀 = 手臂最上面靠身體那一格（右手在 -x 邊，靠身體的是 x 大的那格）
+  armR: { name: '右手', size: [6, 10, 6], core: [3, 7, 2, 1, 1, 1], anchor: [3, 8, 3], at: [-0.3125, 1.08, 0], limb: true, twin: 'armL' },
+  armL: { name: '左手', size: [6, 10, 6], core: [2, 7, 2, 1, 1, 1], anchor: [3, 8, 3], at: [0.3125, 1.08, 0], limb: true, twin: 'armR' },
+  // 髖關節 = 腳最上面的中心
+  legR: { name: '右腳', size: [5, 10, 6], core: [2, 8, 2, 1, 1, 1], anchor: [2.5, 9, 2.5], at: [-0.125, 0.58, 0], limb: true, twin: 'legL' },
+  legL: { name: '左腳', size: [5, 10, 6], core: [2, 8, 2, 1, 1, 1], anchor: [2.5, 9, 2.5], at: [0.125, 0.58, 0], limb: true, twin: 'legR' },
+};
+// 預設造型（原本那個方塊人）各部位的實心範圍
+const BASE = {
+  head: [2, 1, 2, 6, 5, 5], torso: [2, 1, 3, 8, 9, 5],
+  armR: [2, 1, 2, 2, 7, 2], armL: [2, 1, 2, 2, 7, 2],
+  legR: [1, 0, 1, 3, 9, 3], legL: [1, 0, 1, 3, 9, 3],
 };
 export const PART_KEYS = Object.keys(LOOK_PARTS);
 export const MAX_VOXELS = 3000;
@@ -37,23 +47,23 @@ export function partOrigin(p) {
 // look = { parts: { head: Map(key → [x, y, z, hex]), ... } }
 function emptyLook() { return { parts: Object.fromEntries(PART_KEYS.map(p => [p, new Map()])) }; }
 function put(look, p, x, y, z, c) { look.parts[p].set(key(x, y, z), [x, y, z, c]); }
-function coreBox(look, p, fn) {
-  const [cx, cy, cz, w, h, d] = LOOK_PARTS[p].core;
+function baseBox(look, p, fn) {
+  const [cx, cy, cz, w, h, d] = BASE[p];
   for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) for (let k = 0; k < d; k++) put(look, p, cx + i, cy + j, cz + k, fn(i, j, k));
 }
 
 // 用顏色組出原本那種方塊人（敵人、人質都用這個；玩家沒自訂時也是）
 export function defaultLook({ skin = 0xf0c9a0, shirt = 0x888888, pants = 0x2b2f3a, boots = 0x1b1c22, helmet = null } = {}) {
   const L = emptyLook();
-  coreBox(L, 'torso', (i, j) => j === 0 ? 0x2a2420 : shirt);
-  coreBox(L, 'head', (i, j, k) => k === 4 && j === 2 && (i === 1 || i === 3) ? 0x111111 : skin);
+  baseBox(L, 'torso', (i, j) => j === 0 ? 0x2a2420 : shirt);
+  baseBox(L, 'head', (i, j, k) => k === 4 && j === 2 && (i === 1 || i === 4) ? 0x111111 : skin);
   if (helmet !== null) {
-    const [cx, cy, cz] = LOOK_PARTS.head.core;
-    for (let i = 0; i < 5; i++) for (let k = 0; k < 5; k++) for (let j = 4; j < 6; j++) put(L, 'head', cx + i, cy + j, cz + k, helmet);
-    for (let i = 0; i < 5; i++) put(L, 'head', cx + i, cy + 4, cz + 5, helmet);
+    const [cx, cy, cz] = BASE.head;
+    for (let i = 0; i < 6; i++) for (let k = 0; k < 5; k++) for (let j = 4; j < 6; j++) put(L, 'head', cx + i, cy + j, cz + k, helmet);
+    for (let i = 0; i < 6; i++) put(L, 'head', cx + i, cy + 4, cz + 5, helmet);
   }
-  for (const p of ['armR', 'armL']) coreBox(L, p, (i, j) => j < 2 ? skin : shirt);
-  for (const p of ['legR', 'legL']) coreBox(L, p, (i, j) => j < 2 ? boots : pants);
+  for (const p of ['armR', 'armL']) baseBox(L, p, (i, j) => j < 2 ? skin : shirt);
+  for (const p of ['legR', 'legL']) baseBox(L, p, (i, j) => j < 2 ? boots : pants);
   return L;
 }
 export const playerDefaultLook = () => defaultLook(PLAYER_COLORS);
@@ -65,7 +75,7 @@ function fillCore(L) {
     const [cx, cy, cz, w, h, d] = LOOK_PARTS[p].core;
     for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) for (let k = 0; k < d; k++) {
       const kk = key(cx + i, cy + j, cz + k);
-      if (!L.parts[p].has(kk)) L.parts[p].set(kk, def.parts[p].get(kk));
+      if (!L.parts[p].has(kk)) L.parts[p].set(kk, def.parts[p].get(kk) ?? [cx + i, cy + j, cz + k, 0x888888]);
     }
   }
   return L;

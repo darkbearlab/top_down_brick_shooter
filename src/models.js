@@ -95,7 +95,7 @@ export function addGlowEyes(m, color) {
     core.scale.setScalar(1.6 * V);
     const halo = new THREE.Mesh(EYE_GEO, eyeMat(color, 0.35));
     halo.scale.set(4.5 * V, 3.5 * V, V);
-    core.position.x = halo.position.x = sx * V;
+    core.position.x = halo.position.x = sx * 1.5 * V;   // 頭 6 格寬，眼睛在第 2、5 格
     g.add(core, halo);
   }
   m.body.add(g);
