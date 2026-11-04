@@ -8,7 +8,7 @@ import { burst, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, sparks, v
 import { castRay, collide, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
 import { spawnBullet } from './bullets.js';
 import { alertNoise, enemies } from './enemies.js';
-import { flashEl, nextLevel, retryLevel, showMenu, showPanel, updateAmmoHud, updateHud } from './main.js';
+import { flashEl, leaveLabel, leaveLevel, nextLevel, retryLevel, showPanel, updateAmmoHud, updateHud } from './main.js';
 
 // ---------- 玩家 ----------
 export const player = {
@@ -268,7 +268,7 @@ export function killPlayer() {
     if (G.state !== 'dead') return;
     showPanel('YOU DIED', `${levelLabel()}<br>被擊中 ${MAX_HITS} 次`, [
       { label: '重來這關', primary: true, run: retryLevel },
-      { label: '回主選單', run: showMenu },
+      { label: leaveLabel(), run: leaveLevel },
     ]);
   }, 1100);
 }

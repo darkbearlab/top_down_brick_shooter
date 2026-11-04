@@ -46,7 +46,7 @@
     <h1>BRICK<br>SHOOTER</h1>
     <p class="tag">方塊人俯視射擊</p>
     <div id="menuButtons"></div>
-    <p class="ver">v0.2</p>
+    <p class="ver">v0.3</p>
   </div>
 </div>
 
@@ -64,6 +64,55 @@
     <div id="loNote"></div>
     <div id="loRows"></div>
   </div>
+</div>
+
+<!-- 關卡編輯器（src/editor.js） -->
+<div id="editor" class="screen hidden">
+  <div class="ed-inner">
+    <div class="ed-head">
+      <button id="edBack" class="btn">← 返回</button>
+      <input id="edName" maxlength="20" placeholder="關卡名稱">
+    </div>
+    <div id="edPalette"></div>
+    <div id="edWire" class="ed-pal-row"></div>
+    <div id="edHint"></div>
+    <div id="edGridWrap"><div id="edGrid"></div></div>
+    <div id="edWarn"></div>
+    <div class="ed-actions">
+      <button id="edPreview" class="btn">預覽</button>
+      <button id="edTest" class="btn primary">測試戰鬥</button>
+      <button id="edCopy" class="btn">複製 JSON</button>
+    </div>
+    <div id="edMsg"></div>
+    <details id="edSettings" open>
+      <summary>關卡設定</summary>
+      <label><input type="checkbox" id="edDark"> 黑暗關卡（只有手電筒和吊燈）</label>
+      <label><input type="checkbox" id="edAware"> 敵人一開始就發現你</label>
+      <label>過關目標 <select id="edGoal"></select></label>
+      <label id="edHoldRow">要撐幾秒 <input type="number" id="edHold" min="5" max="600"></label>
+      <div id="edWaveBox">
+        <label><input type="checkbox" id="edWaveOn"> 通風口冒殭屍（撐住：一開場就冒；撤離：拿到物資才冒）</label>
+        <div class="ed-grid4">
+          <label>總數<input type="number" id="edWave_count" min="0" placeholder="無限"></label>
+          <label>間隔秒<input type="number" id="edWave_every" min="0.2" step="0.1"></label>
+          <label>巨型 %<input type="number" id="edWave_brute" min="0" max="100"></label>
+          <label>場上上限<input type="number" id="edWave_max" min="1" max="40"></label>
+        </div>
+      </div>
+      <div class="ed-size">地圖大小 寬 <input type="number" id="edW" min="7" max="25"> 高 <input type="number" id="edH" min="7" max="40">
+        <button id="edResize" class="chip">套用</button></div>
+    </details>
+    <details id="edIo">
+      <summary>匯入 / 載入 / 新地圖</summary>
+      <textarea id="edJson" rows="8" placeholder="把關卡 JSON 貼在這裡，再按「匯入」"></textarea>
+      <div class="ed-row"><button id="edImport" class="chip">匯入</button><button id="edNew" class="chip">新地圖</button></div>
+      <select id="edPool"></select>
+    </details>
+  </div>
+</div>
+<div id="previewBar" class="hidden">
+  <button id="previewBack" class="btn">← 回編輯器</button>
+  <button id="previewPlay" class="btn primary">測試戰鬥</button>
 </div>
 
 <!-- 通用面板：暫停、死亡、說明、任務完成 -->

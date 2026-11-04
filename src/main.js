@@ -2,9 +2,11 @@ import { sfx, unlockAudio } from './audio.js';
 import { BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
 import { setHand } from './models.js';
 import { loadLoadout, openLoadout } from './loadout.js';
-import { CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
+import { CUSTOM_LEVELS } from './custom_levels.js';
+import { openEditor } from './editor.js';
+import { setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
 import { debris, fx, markers, setWallTest, updateMarkers, updateParticles } from './fx.js';
-import { H, wallAt, buildFlow, goalText, level, levelDefs, levelLabel, loadLevel, updateGates, updateLamps, updateObjectives, updateSpawner, updateSwitches } from './world.js';
+import { MODE_NAMES, setTestLevel, W, H, wallAt, buildFlow, goalText, level, levelDefs, levelLabel, loadLevel, updateGates, updateLamps, updateObjectives, updateSpawner, updateSwitches } from './world.js';
 import { bullets, spawnBullet, updateBullets } from './bullets.js';
 import { HAND_KEY, curSlot, equipLoadout, player, playerMuzzle, updatePlayer } from './player.js';
 import { enemies, freeEnemy, killEnemy, updateEnemies } from './enemies.js';
@@ -35,9 +37,10 @@ export function nextLevel() {
   if (last) {
     G.state = 'complete';
     player.laser.g.visible = player.guide.g.visible = false;
-    showPanel('任務完成', `${defs.length} 個${mode === 'dark' ? '黑暗' : '破門'}關卡全部清除`, [
-      { label: '再玩一次', primary: true, run: () => startGame(mode, 0) },
-      { label: '回主選單', run: showMenu },
+    const msg = mode === 'test' ? '這關打得過' : `${defs.length} 個${MODE_NAMES[mode]}關卡全部清除`;
+    showPanel(mode === 'test' ? '測試完成' : '任務完成', msg, [
+      { label: mode === 'test' ? '再測一次' : '再玩一次', primary: true, run: () => startGame(mode, 0) },
+      { label: leaveLabel(), run: leaveLevel },
     ]);
     return;
   }
@@ -58,6 +61,8 @@ export function retryLevel() {
 }
 
 export function startGame(mode, index) {
+  $('previewBar').classList.add('hidden');
+  $('editor').classList.add('hidden');
   menuEl.classList.add('hidden');
   hidePanel();
   hudEl.classList.remove('hidden');
@@ -121,7 +126,7 @@ export function pauseGame() {
   showPanel('暫停', levelLabel(), [
     { label: '繼續', primary: true, run: resumeGame },
     { label: '重來這關', run: retryLevel },
-    { label: '回主選單', run: showMenu },
+    { label: leaveLabel(), run: leaveLevel },
   ]);
 }
 export function resumeGame() {
@@ -163,6 +168,8 @@ export const MENU_ITEMS = [
   { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
   { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
   { label: '黑暗模式', sub: `${DARK_LEVELS.length} 個關卡・只有手電筒和吊燈・殭屍成群`, run: () => startGame('dark', 0) },
+  { label: '自訂戰鬥', sub: CUSTOM_LEVELS.length ? `${CUSTOM_LEVELS.length} 個關卡・用編輯器做的` : '還沒有關卡', run: showCustomList },
+  { label: '關卡編輯器', sub: '擺物件、測試、複製 JSON', run: openEditor },
   { label: '武器與裝備', sub: () => player.slots.map(s => s.stats.name).join(' ＋ '), run: showLoadout },
   { label: '操作說明', sub: '搖桿、換彈、破門', run: () => showPanel('操作說明', HELP_HTML, [{ label: '返回', primary: true, run: hidePanel }]) },
 ];
@@ -188,7 +195,41 @@ export function showLoadout() {
   });
 }
 
+// 從關卡回去：測試中的關卡回編輯器，其他回主選單
+export const leaveLabel = () => level?.mode === 'test' ? '回編輯器' : '回主選單';
+export function leaveLevel() { if (level?.mode === 'test') openEditor(); else showMenu(); }
+
+// 編輯器：直接開打或只看地圖
+export function testLevel(def) { setTestLevel(def); startGame('test', 0); }
+export function previewLevel(def) {
+  setTestLevel(def);
+  hidePanel();
+  menuEl.classList.add('hidden');
+  hudEl.classList.add('hidden');
+  $('editor').classList.add('hidden');
+  loadLevel('test', 0);
+  setLighting(false);   // 預覽一律全亮，看得清楚
+  G.state = 'preview';
+  $('previewBar').classList.remove('hidden');
+}
+
+function showCustomList() {
+  if (!CUSTOM_LEVELS.length) {
+    showPanel('自訂戰鬥', '還沒有自訂關卡<br>用「關卡編輯器」做好關卡，按「複製 JSON」貼給 Claude 就會加進來', [
+      { label: '去關卡編輯器', primary: true, run: () => { hidePanel(); openEditor(); } },
+      { label: '返回', run: hidePanel },
+    ]);
+    return;
+  }
+  showPanel('自訂戰鬥', '選一關開始，過關會接著打下一關', [
+    ...CUSTOM_LEVELS.map((d, i) => ({ label: `${i + 1}. ${d.name ?? '未命名'}`, primary: i === 0, run: () => startGame('custom', i) })),
+    { label: '返回', run: hidePanel },
+  ]);
+}
+
 export function showMenu() {
+  $('previewBar').classList.add('hidden');
+  $('editor').classList.add('hidden');
   hidePanel();
   hudEl.classList.add('hidden');
   menuEl.classList.remove('hidden');
@@ -198,6 +239,8 @@ export function showMenu() {
 }
 
 $('pauseBtn').addEventListener('click', pauseGame);
+$('previewBack').addEventListener('click', openEditor);
+$('previewPlay').addEventListener('click', () => startGame('test', 0));
 swapBtn.addEventListener('pointerdown', e => { e.preventDefault(); input.swapPressed = true; });
 $('handBtn').addEventListener('pointerdown', e => { e.preventDefault(); input.handPressed = true; });
 addEventListener('visibilitychange', () => { if (document.hidden && !TICK) pauseGame(); });
@@ -268,21 +311,27 @@ export function frame(t) {
   // 攝影機：跟玩家、往瞄準方向前探、直式時讓角色偏下方；選單時慢慢飄
   const portrait = innerHeight > innerWidth;
   let lx, lz;
+  let dist = camDist;
   if (G.state === 'menu') {
     lx = Math.sin(G.now * 0.15) * 2;
     lz = Math.sin(G.now * 0.1) * (H / 2 - 4);
+  } else if (G.state === 'preview') {
+    // 預覽：整張地圖放進畫面
+    const t = Math.tan(camera.fov * Math.PI / 360);
+    lx = 0; lz = 0.6;
+    dist = Math.max((W / 2 + 0.8) / (t * camera.aspect), (H / 2 + 0.8) * Math.sin(CAM_PITCH) / t);
   } else {
     const aimingNow = player.alive && player.laser.g.visible;
     lx = player.x + (aimingNow ? player.fx * 1.8 : 0);
     lz = player.z + (aimingNow ? player.fz * 1.8 : 0) - (portrait ? 1.6 : 0.5);
   }
-  const ck = 1 - Math.exp(-(G.state === 'menu' ? 1 : 6) * raw);
+  const ck = G.state === 'preview' ? 1 : 1 - Math.exp(-(G.state === 'menu' ? 1 : 6) * raw);
   camTarget.x += (lx - camTarget.x) * ck;
   camTarget.z += (lz - camTarget.z) * ck;
   G.trauma = Math.max(0, G.trauma - raw * 1.8);
   const sh = G.trauma * G.trauma * 0.55;
   const ox = (Math.random() - 0.5) * sh, oz = (Math.random() - 0.5) * sh;
-  camera.position.set(camTarget.x + ox, Math.sin(CAM_PITCH) * camDist, camTarget.z + Math.cos(CAM_PITCH) * camDist + oz);
+  camera.position.set(camTarget.x + ox, Math.sin(CAM_PITCH) * dist, camTarget.z + Math.cos(CAM_PITCH) * dist + oz);
   camera.lookAt(camTarget.x + ox, 0, camTarget.z + oz);
   sun.position.set(camTarget.x - 6, 16, camTarget.z + 4);
   sun.target.position.set(camTarget.x, 0, camTarget.z);

@@ -14,4 +14,14 @@ Three.js 俯視角方塊人射擊，直式手機雙搖桿優先，也支援 WASD
 - 被擊中 3 次就死，清光房間走進綠色出口
 - 模式：清房模式（無限循環）、破門攻堅（貼著木門往前推 = 踹門 + 慢動作）、黑暗模式（只有手電筒和吊燈，殭屍成群，巨型殭屍會衝撞）
 
+- 關卡編輯器：主選單進入，擺物件、接開關線路、設定目標，可以預覽、直接測試，按「複製 JSON」貼給 Claude 加進「自訂戰鬥」
+
+## 檔案
+- `src/main.js` 進入點：遊戲流程、HUD、選單、主迴圈
+- `src/core.js` 場景、燈光、共用狀態 `G`、輸入
+- `src/world.js` 地圖、碰撞、可破壞格子、機關、關卡目標、載入關卡
+- `src/player.js` / `src/enemies.js` / `src/bullets.js` / `src/fx.js` 玩家、敵人、子彈、特效
+- `src/editor.js` 關卡編輯器；`src/custom_levels.js` 自訂戰鬥的關卡池
+- `src/rooms.js` 內建關卡與地圖字元說明；`src/weapons.js` / `src/loadout.js` 武器組裝
+
 本機執行：`python -m http.server 8080`，開 http://localhost:8080（網址加 `?tick` 改用計時器跑主迴圈，視窗被藏起來時除錯用）

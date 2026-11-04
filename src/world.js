@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
 import { ARENA_ROOMS, BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
+import { CUSTOM_LEVELS } from './custom_levels.js';
 import { makeBlockMan } from './models.js';
 import { CAM_PITCH, FLASH_GEO, G, GUN_Y, UNIT_BOX, WALL_H, WOOD, addMat, addTrauma, camTarget, scene, setLighting } from './core.js';
 import { burst, freeBar, fx, makeBar, setBar, sparks, voxelBurst } from './fx.js';
 import { player, resetPlayer } from './player.js';
 import { alertNoise, enemies, spawnEnemy } from './enemies.js';
-import { clearEntities, retryLevel, showMenu, showPanel, showToast, updateHud } from './main.js';
+import { clearEntities, leaveLabel, leaveLevel, retryLevel, showPanel, showToast, updateHud } from './main.js';
 
 export let W = 13, H = 19;          // 依地圖改變
 
@@ -264,13 +265,26 @@ export const wallMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 export const doorMat = new THREE.MeshLambertMaterial({ color: 0x40242a, emissive: 0xff2040, emissiveIntensity: 0.35 });
 export const exitMat = addMat(0x30ff90, 0.55);
 
-export const levelDefs = mode => mode === 'arena' ? ARENA_ROOMS.map(map => ({ map })) : mode === 'dark' ? DARK_LEVELS : BREACH_LEVELS;
+// 關卡池：test = 編輯器正在測試的那一關
+let testLevel = null;
+export function setTestLevel(def) { testLevel = def; }
+export const MODE_NAMES = { breach: '破門', dark: '黑暗', custom: '自訂', test: '測試' };
+export const levelDefs = mode => ({
+  arena: ARENA_ROOMS.map(map => ({ map, aware: true })),
+  breach: BREACH_LEVELS,
+  dark: DARK_LEVELS.map(d => ({ dark: true, ...d })),
+  custom: CUSTOM_LEVELS,
+  test: [testLevel],
+})[mode];
 export function levelLabel() {
   if (!level) return '';
   if (level.mode === 'arena') return `ROOM ${level.index + 1}`;
+  if (level.mode === 'test') return `測試　${level.def.name ?? ''}`;
   const defs = levelDefs(level.mode);
-  return `${level.mode === 'dark' ? '黑暗' : '破門'} ${level.index + 1}/${defs.length}　${defs[level.index].name}`;
+  return `${MODE_NAMES[level.mode]} ${level.index + 1}/${defs.length}　${defs[level.index].name}`;
 }
+// 地圖可以是一整串字（rooms.js）或一行一個字串的陣列（編輯器的 JSON）
+export const mapRows = def => (Array.isArray(def.map) ? def.map : def.map.split('\n')).map(s => s.trim()).filter(Boolean);
 
 // 吊燈：燈具 + 不投影的點光源；l = 會閃；可以被子彈打掉，也可以接在開關上
 export const LAMP_R = 3.3, LAMP_Y = 2.0;
@@ -557,7 +571,7 @@ export function killHostage(dx, dz) {
     if (G.state !== 'failed') return;
     showPanel('任務失敗', `${levelLabel()}<br>人質被你打中了`, [
       { label: '重來這關', primary: true, run: retryLevel },
-      { label: '回主選單', run: showMenu },
+      { label: leaveLabel(), run: leaveLevel },
     ]);
   }, 1100);
 }
@@ -632,12 +646,13 @@ export function loadLevel(mode, index) {
   if (level) { scene.remove(level.group); for (const s of level.switches) freeBar(s.bar); }
   const defs = levelDefs(mode);
   const def = defs[index % defs.length];
-  const grid = def.map.split('\n').map(s => [...s.trim()]);
-  H = grid.length; W = grid[0].length;
+  const rows = mapRows(def), w = Math.max(...rows.map(r => r.length));
+  const grid = rows.map(s => [...s.padEnd(w, '#')]);
+  H = grid.length; W = w;
   flow = new Int16Array(W * H); zflow = new Int16Array(W * H);
   level = {
     group: new THREE.Group(), grid, doorOpen: false, doorMeshes: [], exitMeshes: [],
-    doors: new Map(), mode, index, dark: mode === 'dark', lamps: [], def,
+    doors: new Map(), mode, index, dark: !!def.dark, lamps: [], def,
     switches: [], vents: [], cells: new Map(), cellCols: [], cellMesh: null, spawner: null, hostage: null, item: null,
     goal: def.goal ?? 'clear', holdT: def.hold ?? 0,
   };
@@ -652,7 +667,7 @@ export function loadLevel(mode, index) {
 
   const walls = [];
   const loop = mode === 'arena' ? Math.floor(index / defs.length) : 0;
-  const aware = mode === 'arena';    // 清房模式敵人一開始就知道你在哪
+  const aware = !!def.aware;    // 清房模式敵人一開始就知道你在哪
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
     const ch = grid[r][c] || '#';
     const x = toWorldX(c), z = toWorldZ(r);

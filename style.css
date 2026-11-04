@@ -154,3 +154,62 @@ html, body {
 .chip:disabled { opacity: .35; cursor: default; }
 .chip small { display: block; font-size: 10px; font-weight: 500; margin-top: 2px; }
 #loName small { display: block; font-size: 11px; font-weight: 500; opacity: .55; letter-spacing: 0; margin-top: 2px; }
+
+/* 關卡編輯器 */
+#editor { align-items: flex-start; overflow-y: auto; touch-action: pan-y; background: #0b0d12; padding: 12px; }
+#editor input, #editor textarea, #editor select { user-select: text; -webkit-user-select: text; }
+.ed-inner { width: 100%; max-width: 560px; margin: 0 auto; padding-bottom: 40px; display: flex; flex-direction: column; gap: 10px; }
+.ed-head { display: flex; gap: 8px; align-items: center; padding-top: env(safe-area-inset-top); }
+.ed-head .btn { width: auto; padding: 9px 14px; font-size: 14px; }
+#edName, #editor select, #editor input[type=number], #edJson {
+  font: inherit; color: #e8ecf2; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); border-radius: 9px; padding: 8px 10px;
+}
+#edName { flex: 1; min-width: 0; font-size: 16px; font-weight: 800; }
+.ed-pal-row { display: flex; flex-direction: column; gap: 5px; }
+#edPalette { display: flex; flex-direction: column; gap: 8px; }
+.ed-pal-label { font-size: 11px; font-weight: 800; letter-spacing: 1px; opacity: .55; }
+.ed-pal-items { display: flex; flex-wrap: wrap; gap: 5px; }
+.ed-tool {
+  display: flex; align-items: center; gap: 5px; padding: 5px 8px 5px 5px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 700; color: #e8ecf2; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.14);
+}
+.ed-tool i { width: 18px; height: 18px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; }
+.ed-tool.on { border-color: #ffd060; background: rgba(255,208,96,.16); }
+.ed-wire {
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 900; color: #111;
+  background: var(--wc); border: 2px solid transparent; opacity: .55;
+}
+.ed-wire.on { opacity: 1; border-color: #fff; }
+#edHint { font-size: 12px; opacity: .6; }
+#edGridWrap { overflow: auto; touch-action: none; border-radius: 6px; max-height: 70vh; align-self: center; max-width: 100%; }
+#edGridWrap.pan { touch-action: pan-x pan-y; }
+#edGrid { display: grid; gap: 1px; background: #000; padding: 1px; width: max-content; }
+.ed-cell { position: relative; display: flex; align-items: center; justify-content: center; font-weight: 900; line-height: 1; cursor: crosshair; }
+.ed-cell b { position: absolute; right: 1px; bottom: 1px; font-size: 9px; color: #111; border-radius: 3px; padding: 0 2px; line-height: 11px; }
+.ed-sw { position: absolute; left: 1px; right: 1px; bottom: 1px; display: flex; gap: 1px; justify-content: center; }
+.ed-sw u { width: 5px; height: 5px; border-radius: 50%; }
+#edWarn { font-size: 12px; color: #ffd060; display: flex; flex-direction: column; gap: 2px; }
+#edWarn .err { color: #ff7a6a; }
+.ed-actions { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 8px; }
+.ed-actions .btn { text-align: center; padding: 12px 6px; font-size: 15px; }
+#edMsg { font-size: 13px; color: #40e090; text-align: center; opacity: 0; min-height: 1em; }
+#edMsg.show { animation: edmsg 2.4s; }
+@keyframes edmsg { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+#editor details { background: rgba(255,255,255,.04); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+#editor summary { font-weight: 800; cursor: pointer; }
+#editor details label { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 8px; }
+#edWaveBox label { font-size: 13px; }
+.ed-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ed-grid4 label { flex-direction: column; align-items: stretch !important; gap: 3px !important; font-size: 11px !important; }
+.ed-grid4 input { width: 100%; min-width: 0; padding: 6px !important; }
+.ed-size { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 14px; margin-top: 8px; }
+.ed-size input { width: 60px; }
+#edJson { width: 100%; margin-top: 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; resize: vertical; }
+.ed-row { display: flex; gap: 8px; margin: 8px 0; }
+#edPool { width: 100%; }
+#previewBar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; display: flex; gap: 8px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(0deg, rgba(8,10,14,.9), rgba(8,10,14,0));
+}
+#previewBar.hidden { display: none; }
+#previewBar .btn { text-align: center; }
