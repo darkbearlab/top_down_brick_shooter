@@ -320,20 +320,23 @@ export const doorMat = new THREE.MeshLambertMaterial({ color: 0x40242a, emissive
 export const exitMat = addMat(0x30ff90, 0.55);
 
 // 關卡池：test = 編輯器正在測試的那一關
-let testLevel = null;
+let testLevel = null, randomLevel = null;
 export function setTestLevel(def) { testLevel = def; }
-export const MODE_NAMES = { breach: '破門', dark: '黑暗', custom: '自訂', test: '測試' };
+export function setRandomLevel(def) { randomLevel = def; }
+export const MODE_NAMES = { breach: '破門', dark: '黑暗', custom: '自訂', test: '測試', random: '隨機' };
 export const levelDefs = mode => ({
   arena: ARENA_ROOMS.map(map => ({ map, aware: true })),
   breach: BREACH_LEVELS,
   dark: DARK_LEVELS.map(d => ({ dark: true, ...d })),
   custom: CUSTOM_LEVELS,
   test: [testLevel],
+  random: [randomLevel],
 })[mode];
 export function levelLabel() {
   if (!level) return '';
   if (level.mode === 'arena') return `ROOM ${level.index + 1}`;
   if (level.mode === 'test') return `測試　${level.def.name ?? ''}`;
+  if (level.mode === 'random') return `隨機　${level.def.name ?? ''}`;
   const defs = levelDefs(level.mode);
   return `${MODE_NAMES[level.mode]} ${level.index + 1}/${defs.length}　${defs[level.index].name}`;
 }

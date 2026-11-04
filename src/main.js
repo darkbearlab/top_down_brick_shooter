@@ -4,6 +4,7 @@ import { setHand } from './models.js';
 import { loadLoadout, openLoadout } from './loadout.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
 import { openEditor } from './editor.js';
+import { openMissionSetup, playRandom } from './missionsetup.js';
 import { updateSwingDoors } from './swingdoors.js';
 import { setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
 import { debris, fx, markers, setWallTest, updateMarkers, updateParticles } from './fx.js';
@@ -35,6 +36,16 @@ export function nextLevel() {
   if (G.state !== 'play') return;
   const defs = levelDefs(level.mode), mode = level.mode;
   const last = mode !== 'arena' && level.index + 1 >= defs.length;
+  if (last && mode === 'random') {
+    G.state = 'complete';
+    player.laser.g.visible = player.guide.g.visible = false;
+    showPanel('任務完成', level.def.name, [
+      { label: '下一張地圖', primary: true, run: () => playRandom() },
+      { label: '重玩這張', run: () => startGame('random', 0) },
+      { label: '回主選單', run: showMenu },
+    ]);
+    return;
+  }
   if (last) {
     G.state = 'complete';
     player.laser.g.visible = player.guide.g.visible = false;
@@ -167,10 +178,11 @@ R 換彈・滾輪或 1 / 2 切換武器<br>Q 左手持槍・E 右手持槍・Esc
 // 進入畫面的功能清單：之後新增功能只要加一筆
 // 有 items 的是第二層選單
 export const MENU_ITEMS = [
-  { label: '任務模式', sub: '清房・破門攻堅・黑暗', items: [
+  { label: '任務模式', sub: '清房・破門攻堅・黑暗・隨機任務', items: [
     { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
     { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
     { label: '黑暗模式', sub: `${DARK_LEVELS.length} 個關卡・只有手電筒和吊燈・殭屍成群`, run: () => startGame('dark', 0) },
+    { label: '隨機任務', sub: '自訂地圖大小、敵人數量、可能抽到的任務', run: openMissionSetup },
   ] },
   { label: '自訂戰鬥', sub: CUSTOM_LEVELS.length ? `${CUSTOM_LEVELS.length} 個關卡・用編輯器做的` : '還沒有關卡', run: showCustomList },
   { label: '關卡編輯器', sub: '擺物件、測試、複製 JSON（建議用電腦）', run: openEditor },
@@ -234,6 +246,7 @@ function showCustomList() {
 }
 
 export function showMenu() {
+  $('genSetup').classList.add('hidden');
   $('previewBar').classList.add('hidden');
   $('editor').classList.add('hidden');
   hidePanel();

@@ -66,6 +66,16 @@
   </div>
 </div>
 
+<!-- 隨機任務設定（src/missionsetup.js） -->
+<div id="genSetup" class="screen hidden">
+  <div class="lo-inner">
+    <div class="lo-head"><h2>隨機任務</h2><button id="genBack" class="btn">返回</button></div>
+    <div id="genRows"></div>
+    <div class="lo-row"><div class="lo-label">種子（空白 = 隨機；同一個種子會產生同一張圖）</div><input id="genSeed" inputmode="numeric" placeholder="隨機"></div>
+    <button id="genStart" class="btn primary">產生地圖並出發</button>
+  </div>
+</div>
+
 <!-- 關卡編輯器（src/editor.js）：以電腦操作為主，三欄排版 -->
 <div id="editor" class="screen hidden">
   <div class="ed-inner">

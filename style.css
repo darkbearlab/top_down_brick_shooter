@@ -157,6 +157,12 @@ html, body {
 .chip small { display: block; font-size: 10px; font-weight: 500; margin-top: 2px; }
 #loName small { display: block; font-size: 11px; font-weight: 500; opacity: .55; letter-spacing: 0; margin-top: 2px; }
 
+/* 隨機任務設定 */
+#genSetup { align-items: flex-start; overflow-y: auto; touch-action: pan-y; background: rgba(8,10,14,.96); }
+#genRows { display: flex; flex-direction: column; gap: 14px; margin-bottom: 4px; }
+#genSeed { padding: 10px 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: #e8ecf2; font: inherit; font-size: 15px; }
+#genStart { text-align: center; margin-top: 6px; }
+
 /* 關卡編輯器：電腦用，三欄排版；窄螢幕退回單欄 */
 #editor { padding: 0; background: #0b0d12; align-items: stretch; }
 #editor input, #editor textarea, #editor select { user-select: text; -webkit-user-select: text; }
