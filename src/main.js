@@ -169,7 +169,7 @@ export const MENU_ITEMS = [
   { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
   { label: '黑暗模式', sub: `${DARK_LEVELS.length} 個關卡・只有手電筒和吊燈・殭屍成群`, run: () => startGame('dark', 0) },
   { label: '自訂戰鬥', sub: CUSTOM_LEVELS.length ? `${CUSTOM_LEVELS.length} 個關卡・用編輯器做的` : '還沒有關卡', run: showCustomList },
-  { label: '關卡編輯器', sub: '擺物件、測試、複製 JSON', run: openEditor },
+  { label: '關卡編輯器', sub: '擺物件、測試、複製 JSON（建議用電腦）', run: openEditor },
   { label: '武器與裝備', sub: () => player.slots.map(s => s.stats.name).join(' ＋ '), run: showLoadout },
   { label: '操作說明', sub: '搖桿、換彈、破門', run: () => showPanel('操作說明', HELP_HTML, [{ label: '返回', primary: true, run: hidePanel }]) },
 ];

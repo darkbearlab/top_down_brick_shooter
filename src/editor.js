@@ -145,7 +145,7 @@ function resizeDoc(d, w, h) {
 }
 
 // ---------- 狀態 ----------
-let doc = null, tool = { ch: '#' }, wireGroup = 1, painting = false, lastCell = null, built = false;
+let doc = null, tool = { ch: '#' }, wireGroup = 1, painting = false, erasing = false, lastCell = null, built = false;
 
 function loadDraft() {
   try { const d = JSON.parse(localStorage.getItem(KEY)); if (d?.grid) return d; } catch { /* 沒存過就開新的 */ }
@@ -194,12 +194,7 @@ function build() {
   link.dataset.key = 'link';
   link.innerHTML = '<i style="background:#1b2a3a;color:#40d0ff">⚡</i>接線';
   link.onclick = () => { tool = { link: true }; renderTools(); };
-  const pan = document.createElement('button');
-  pan.className = 'ed-tool';
-  pan.dataset.key = 'pan';
-  pan.innerHTML = '<i style="background:#333;color:#fff">✋</i>捲動';
-  pan.onclick = () => { tool = { pan: true }; renderTools(); };
-  wbox.append(link, pan);
+  wbox.append(link);
   wire.appendChild(wbox);
 
   $('edGoal').innerHTML = GOALS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
@@ -218,20 +213,26 @@ function build() {
   };
 
   const grid = $('edGrid');
+  // 左鍵畫、右鍵擦掉（畫成地板）
   grid.addEventListener('pointerdown', e => {
-    if (tool.pan) return;
     const cell = e.target.closest('.ed-cell');
     if (!cell) return;
     e.preventDefault();
-    painting = true; lastCell = null;
+    painting = true; erasing = e.button === 2; lastCell = null;
     apply(cell);
   });
   grid.addEventListener('pointermove', e => {
-    if (!painting || tool.link) return;
+    if (!painting || (tool.link && !erasing)) return;
     const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.ed-cell');
     if (el) apply(el);
   });
-  addEventListener('pointerup', () => { if (painting) { painting = false; saveDraft(); renderMeta(); } });
+  addEventListener('pointerup', () => { if (painting) { painting = false; erasing = false; saveDraft(); renderMeta(); } });
+  // 數字鍵換線路（在輸入框打字時不算）
+  addEventListener('keydown', e => {
+    if ($('editor').classList.contains('hidden') || e.target.closest('input, textarea, select')) return;
+    if (e.key >= '1' && e.key <= '9') { wireGroup = +e.key; renderTools(); }
+  });
+  addEventListener('resize', () => { if (!$('editor').classList.contains('hidden')) renderGrid(); });
 
   $('edName').oninput = e => { doc.name = e.target.value; saveDraft(); };
   $('edDark').onchange = e => { doc.dark = e.target.checked; changed(); };
@@ -271,17 +272,18 @@ async function copyJson() {
   const json = prettyJson(r.def);
   const ta = $('edJson');
   ta.value = json;
-  $('edIo').open = true;
   try { await navigator.clipboard.writeText(json); flash('已複製 JSON，直接貼給 Claude'); }
   catch { ta.focus(); ta.select(); flash('請手動複製下面的 JSON'); }
 }
 
 // 在一格上套用目前的工具
+const currentTool = () => tool;
 function apply(el) {
   const r = +el.dataset.r, c = +el.dataset.c, key = `${r},${c}`;
   if (lastCell === key) return;
   lastCell = key;
   const g = doc.grid;
+  const tool = erasing ? { ch: '.' } : currentTool();
   if (tool.link) {
     if (g[r][c] === 'K') {
       const list = doc.sw[key] ??= [];
@@ -303,9 +305,12 @@ function apply(el) {
   drawCell(r, c);
 }
 
+// 格子大小：塞得進中間那欄就好，最大 40px
 function cellSize() {
-  const avail = Math.min(innerWidth, 560) - 36;
-  return Math.max(16, Math.min(30, Math.floor(avail / doc.w)));
+  const box = document.querySelector('#editor .ed-center');
+  // 扣掉內距與格線（每格 1px）
+  const aw = box.clientWidth - 30 - doc.w, ah = innerWidth > 900 ? box.clientHeight - 30 - doc.h : Infinity;
+  return Math.max(14, Math.min(40, Math.floor(aw / doc.w), Math.floor(ah / doc.h)));
 }
 
 function drawCell(r, c) {
@@ -342,13 +347,12 @@ function renderGrid() {
 }
 
 function renderTools() {
-  const key = tool.ch ?? (tool.wire ? 'w:' + tool.wire : tool.link ? 'link' : 'pan');
+  const key = tool.ch ?? (tool.wire ? 'w:' + tool.wire : 'link');
   document.querySelectorAll('#editor .ed-tool').forEach(b => b.classList.toggle('on', b.dataset.key === key));
   document.querySelectorAll('#editor .ed-wire').forEach(b => b.classList.toggle('on', +b.dataset.g === wireGroup));
-  $('edGridWrap').classList.toggle('pan', !!tool.pan);
   $('edHint').textContent = tool.link ? `接線：點開關接上 / 拆掉線路 ${wireGroup}，點連動物件改成線路 ${wireGroup}`
     : tool.wire ? `畫上去的物件接在線路 ${wireGroup}，用「接線」把開關接到同一條線路`
-    : tool.pan ? '捲動模式：可以拖曳捲動地圖' : '點或拖曳來畫；選「地板」就是橡皮擦';
+    : '點或拖曳來畫';
 }
 
 function renderMeta() {
