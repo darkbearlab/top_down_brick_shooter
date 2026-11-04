@@ -332,7 +332,9 @@ const CELL_KINDS = {
 const COL_GEO = new THREE.BoxGeometry(COL, 1, COL);
 const cellMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const ZERO_MTX = new THREE.Matrix4().makeScale(0, 0, 0);
-const COVER_BLOCK = 0.75;   // 目標貼著半掩體時，子彈被擋下的機率
+const COVER_BLOCK = 0.75;        // 目標貼著半掩體時，子彈被擋下的機率
+const COVER_BLOCK_FIRING = 0.2;  // 貼著但正在開火（探出身子）時的機率
+const FIRING_WINDOW = 0.3;       // 開槍後幾秒內算「正在開火」
 const SWITCH_TIME = 0.9;
 const wallMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const doorMat = new THREE.MeshLambertMaterial({ color: 0x40242a, emissive: 0xff2040, emissiveIntensity: 0.35 });
@@ -512,12 +514,14 @@ function coverStops(b, cell) {
     b.coverCell = cell.id;
     const cx = toWorldX(cell.c), cz = toWorldZ(cell.r);
     const targets = b.owner === 'p' ? enemies : (player.alive ? [player] : []);
-    const hug = targets.some(t => {
+    const hug = targets.find(t => {
       const tx = t.x - cx, tz = t.z - cz, along = tx * b.dx + tz * b.dz;
       return along > 0 && along < 1.3 && Math.abs(tx * b.dz - tz * b.dx) < t.r + 0.4;
     });
+    // 貼著掩體但正在開火 = 探出身子，大多擋不到
+    const chance = hug && now - (hug.lastShot ?? -9) < FIRING_WINDOW ? COVER_BLOCK_FIRING : COVER_BLOCK;
     // 開槍的人自己靠著掩體往外打，不受影響
-    b.coverBlock = hug && b.traveled > 0.9 && Math.random() < COVER_BLOCK;
+    b.coverBlock = !!hug && b.traveled > 0.9 && Math.random() < chance;
   }
   return b.coverBlock;
 }
@@ -1242,6 +1246,7 @@ function updatePlayer(dt) {
       spawnBullet('p', 'player', mm.x, mm.z, Math.sin(actA + sp), Math.cos(actA + sp), cst.speed, cst.range, cst.damage);
       muzzleFlash(mm.x, GUN_Y, mm.z, 0xffc040);
       muzzleGlow = 0.07;
+      p.lastShot = now;
       // 後座力：把實際槍口踢偏，方向大多延續上一發
       if (Math.random() < 0.3) p.kickSign *= -1;
       p.recoil = Math.max(-0.45, Math.min(0.45, p.recoil + cst.kick * DEG * p.kickSign * (0.6 + Math.random() * 0.4)));
@@ -1606,6 +1611,7 @@ function updateEnemies(dt) {
             }
             muzzleFlash(m.x, GUN_Y * e.def.scale, m.z, heavy ? 0xc060ff : 0xff5030);
             e.burstLeft--;
+            e.lastShot = now;
             e.ammo--;
           }
           if (e.burstLeft <= 0 && e.t <= 0) {
