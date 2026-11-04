@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { sfx } from './audio.js';
 import { ARENA_ROOMS, BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
-import { makeBlockMan } from './models.js';
+import { animateMan, makeBlockMan } from './models.js';
 import { CAM_PITCH, FLASH_GEO, G, GUN_Y, UNIT_BOX, WALL_H, WOOD, addMat, addTrauma, camTarget, scene, setLighting } from './core.js';
 import { burst, freeBar, fx, makeBar, setBar, sparks, voxelBurst } from './fx.js';
 import { player, resetPlayer } from './player.js';
@@ -576,6 +576,58 @@ export function killHostage(dx, dz) {
   }, 1100);
 }
 
+// 救出的人質沿著玩家走過的路跟上（麵包屑），轉角不會卡牆
+const FOLLOW_DIST = 1.1, HOSTAGE_SPEED = 5.2;
+// 一個半徑 rad 的圓能不能直線從 a 走到 b（牆、關著的門、沙包都算擋）
+function walkable(ax, az, bx, bz, rad) {
+  const dl = Math.hypot(bx - ax, bz - az), n = Math.ceil(dl / 0.15);
+  for (let i = 1; i <= n; i++) {
+    const x = ax + (bx - ax) * i / n, z = az + (bz - az) * i / n;
+    const c0 = tileC(x), r0 = tileR(z);
+    for (let r = r0 - 1; r <= r0 + 1; r++) for (let c = c0 - 1; c <= c0 + 1; c++) {
+      const minX = c - W / 2, minZ = r - H / 2;
+      const dx = Math.max(minX, Math.min(x, minX + 1)) - x, dz = Math.max(minZ, Math.min(z, minZ + 1)) - z;
+      if (dx * dx + dz * dz >= rad * rad) continue;
+      if (isSolidTile(c, r)) return false;
+      const cell = cellAt(c, r);
+      if (cell && nearestColumn(cell, x, z)?.d < rad) return false;
+    }
+  }
+  return true;
+}
+function followPlayer(h, dt, d) {
+  const last = h.trail[h.trail.length - 1];
+  if (!last || Math.hypot(player.x - last.x, player.z - last.z) > 0.25) h.trail.push({ x: player.x, z: player.z });
+  let speed = 0;
+  if (h.trail.length > 400) h.trail.splice(0, h.trail.length - 400);
+  if (d > FOLLOW_DIST) {
+    // 看得到比較新的點就直接抄捷徑（也避免卡在走不到的舊點）
+    h.scanT = (h.scanT ?? 0) - dt;
+    if (h.scanT <= 0) {
+      h.scanT = 0.15;
+      for (let i = h.trail.length - 1; i > Math.max(0, h.trail.length - 40); i--) {
+        if (walkable(h.x, h.z, h.trail[i].x, h.trail[i].z, h.r)) { h.trail.splice(0, i); break; }
+      }
+    }
+    while (h.trail.length > 1 && Math.hypot(h.trail[0].x - h.x, h.trail[0].z - h.z) < 0.2) h.trail.shift();
+    const t = h.trail[0], dx = t.x - h.x, dz = t.z - h.z, dl = Math.hypot(dx, dz);
+    if (dl > 1e-3) {
+      const step = Math.min(dl, HOSTAGE_SPEED * Math.min(1, (d - FOLLOW_DIST) * 2) * dt);
+      h.x += dx / dl * step; h.z += dz / dl * step;
+      speed = step / dt / HOSTAGE_SPEED;
+      h.man.body.rotation.y = Math.atan2(dx, dz);
+    }
+  }
+  collide(h, h.r);
+  h.man.root.position.set(h.x, 0, h.z);
+  animateMan(h.man, speed, dt, false);
+}
+// 撤離時人質要跟在身邊才算
+export const hostageReady = () => {
+  const h = level.hostage;
+  return !h || !h.saved || Math.hypot(h.x - player.x, h.z - player.z) < 2.6;
+};
+
 // 撤離物資：發光的箱子，拿到後出口打開、通風口開始冒殭屍
 export const itemMat = addMat(0x40e0ff, 0.9);
 export function addItem(x, z) {
@@ -615,10 +667,12 @@ export function updateObjectives(dt) {
     if (d < min && d > 1e-4) { player.x = h.x + dx / d * min; player.z = h.z + dz / d * min; }
     if (!h.saved && enemies.length === 0 && d < min + 0.35) {
       h.saved = true;
+      h.trail = [];
       h.man.armL.rotation.x = h.man.armR.rotation.x = 0;
       sfx.reloadDone();
       openExit('人質救出');
     }
+    if (h.saved) followPlayer(h, dt, d);
   }
   if (L.doorOpen) return;
   if (goal === 'clear' && enemies.length === 0) openExit();

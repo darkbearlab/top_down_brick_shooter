@@ -5,10 +5,10 @@ import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
 import { DEG, G, GUN_Y, MAX_HITS, addTrauma, camera, input, scene } from './core.js';
 import { burst, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, sparks, voxelBurst } from './fx.js';
-import { castRay, collide, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
+import { castRay, collide, hostageReady, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
 import { spawnBullet } from './bullets.js';
 import { alertNoise, enemies } from './enemies.js';
-import { flashEl, leaveLabel, leaveLevel, nextLevel, retryLevel, showPanel, updateAmmoHud, updateHud } from './main.js';
+import { flashEl, showToast, leaveLabel, leaveLevel, nextLevel, retryLevel, showPanel, updateAmmoHud, updateHud } from './main.js';
 
 // ---------- 玩家 ----------
 export const player = {
@@ -231,7 +231,10 @@ export function updatePlayer(dt) {
   p.man.gun.rotation.x = busy ? 0.7 : 0;
 
   // 走進出口
-  if (level.doorOpen && level.grid[tileR(p.z)]?.[tileC(p.x)] === 'D') nextLevel();
+  if (level.doorOpen && level.grid[tileR(p.z)]?.[tileC(p.x)] === 'D') {
+    if (hostageReady()) nextLevel();
+    else if (G.now - (p.waitToast ?? -9) > 2) { p.waitToast = G.now; showToast('等人質跟上', ''); }
+  }
 }
 
 export function hurtPlayer(dx, dz) {
