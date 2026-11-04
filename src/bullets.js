@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { sfx } from './audio.js';
 import { GUN_Y, TRACER, UNIT_BOX, scene } from './core.js';
 import { sparks } from './fx.js';
-import { LAMP_HIT_DZ, breakLamp, cellAt, colIndex, coverStops, hitColumn, isSolidTile, killHostage, level, tileC, tileR } from './world.js';
+import { LAMP_HIT_DZ, breakLamp, cellAt, colIndex, coverStops, hitColumn, hurtHostage, isSolidTile, killHostage, level, tileC, tileR } from './world.js';
 import { hurtPlayer, player } from './player.js';
 import { damageEnemy, enemies } from './enemies.js';
+import { bulletHitsSwing } from './swingdoors.js';
 
 // ---------- 子彈（曳光彈） ----------
 export const bullets = [];
@@ -47,6 +48,7 @@ export function updateBullets(dt) {
             break;
           }
         }
+        if (level.swings.length && bulletHitsSwing(b)) { b.dying = true; break; }
         if (b.owner === 'p') {
           for (const e of enemies) {
             const ddx = e.x - b.x, ddz = e.z - b.z;
@@ -57,9 +59,14 @@ export function updateBullets(dt) {
           for (const l of level.lamps) {
             if (!l.broken && (l.x - b.x) ** 2 + (l.z + LAMP_HIT_DZ - b.z) ** 2 < 0.22 * 0.22) breakLamp(l);
           }
-        } else if (player.alive && player.inv <= 0) {
-          const ddx = player.x - b.x, ddz = player.z - b.z;
-          if (ddx * ddx + ddz * ddz < 0.3 * 0.3) { b.dying = true; hurtPlayer(b.dx, b.dz); }
+        } else {
+          if (player.alive && player.inv <= 0) {
+            const ddx = player.x - b.x, ddz = player.z - b.z;
+            if (ddx * ddx + ddz * ddz < 0.3 * 0.3) { b.dying = true; hurtPlayer(b.dx, b.dz); break; }
+          }
+          // 救出來跟著走的人質會被敵人的流彈打到
+          const h = level.hostage;
+          if (h?.alive && h.saved && (h.x - b.x) ** 2 + (h.z - b.z) ** 2 < (h.r + 0.04) ** 2) { b.dying = true; hurtHostage(b.dx, b.dz); }
         }
       }
       if (b.traveled > b.range) b.dying = true;

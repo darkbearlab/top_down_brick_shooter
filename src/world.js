@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { sfx } from './audio.js';
 import { ARENA_ROOMS, BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
-import { animateMan, makeBlockMan } from './models.js';
+import { animateMan, makeBlockMan, setFlash } from './models.js';
 import { CAM_PITCH, FLASH_GEO, G, GUN_Y, UNIT_BOX, WALL_H, WOOD, addMat, addTrauma, camTarget, scene, setLighting } from './core.js';
 import { burst, freeBar, fx, makeBar, setBar, sparks, voxelBurst } from './fx.js';
 import { player, resetPlayer } from './player.js';
 import { alertNoise, enemies, spawnEnemy } from './enemies.js';
+import { addSwingDoor, collideSwings, raySwings, swingClosedAt } from './swingdoors.js';
 import { clearEntities, leaveLabel, leaveLevel, retryLevel, showPanel, showToast, updateHud } from './main.js';
 
 export let W = 13, H = 19;          // 依地圖改變
@@ -94,10 +95,15 @@ export function collide(o, rad) {
       }
     }
   }
+  collideSwings(o, rad);
 }
 
-// 方格 DDA 射線，回傳撞牆距離
+// 射線，回傳撞牆距離（推門的門板也會擋）
 export function castRay(ox, oz, dx, dz, max) {
+  return Math.min(castRayGrid(ox, oz, dx, dz, max), raySwings(ox, oz, dx, dz, max));
+}
+// 方格 DDA 射線
+function castRayGrid(ox, oz, dx, dz, max) {
   const x = ox + W / 2, z = oz + H / 2;
   let cx = Math.floor(x), cz = Math.floor(z);
   if (isSolidTile(cx, cz)) return 0;
@@ -173,6 +179,54 @@ export const flowAt = (x, z) => {
   const c = tileC(x), r = tileR(z);
   return (c >= 0 && c < W && r >= 0 && r < H) ? flow[c + r * W] : -1;
 };
+// 敵人知道玩家在哪但路被關著的門擋住：走到門前守著，臉朝門
+export function seekDir(e) {
+  if (flowAt(e.x, e.z) >= 0) return navDir(e);
+  const d = navDir(e, zflow);
+  const c = tileC(e.x + d.x * 0.95), r = tileR(e.z + d.z * 0.95);
+  const cell = cellAt(c, r);
+  if (doorAt(c, r)?.open === false || (cell?.kind === 'door' && !cell.passable)) d.hold = true;
+  return d;
+}
+
+// 聲音傳播：從 (x, z) 往外擴散，關著的門會悶住（多算幾格），牆擋住
+// 回傳每格的「聽起來多遠」，超過 max 就不算
+const DOOR_MUFFLE = 3;
+let soundBuf = null;
+export function soundField(x, z, max) {
+  max = Math.ceil(max);
+  if (!soundBuf || soundBuf.length !== W * H) soundBuf = new Int16Array(W * H);
+  const f = soundBuf;
+  f.fill(-1);
+  const sc = tileC(x), sr = tileR(z);
+  if (!inMap(sc, sr)) return f;
+  // 成本只有 1 或 DOOR_MUFFLE：用分桶的 Dijkstra
+  const buckets = Array.from({ length: max + 1 }, () => []);
+  f[sc + sr * W] = 0;
+  buckets[0].push(sc + sr * W);
+  for (let d = 0; d <= max; d++) {
+    for (const i of buckets[d]) {
+      if (f[i] !== d) continue;
+      const c = i % W, r = (i / W) | 0;
+      for (const [dc, dr] of DIRS4) {
+        const nc = c + dc, nr = r + dr;
+        if (!inMap(nc, nr)) continue;
+        const ch = level.grid[nr][nc];
+        if (ch === '#' || ch === 'V') continue;
+        const cell = cellAt(nc, nr);
+        if (cell?.kind === 'wall' && !cell.passable) continue;
+        const shut = (ch === 'D' && !level.doorOpen) || doorAt(nc, nr)?.open === false
+          || (cell?.kind === 'door' && !cell.passable) || swingClosedAt(nc, nr);
+        const nd = d + (shut ? DOOR_MUFFLE : 1), ni = nc + nr * W;
+        if (nd > max || (f[ni] !== -1 && f[ni] <= nd)) continue;
+        f[ni] = nd;
+        buckets[nd].push(ni);
+      }
+    }
+  }
+  return f;
+}
+
 export function navDir(e, field = flow) {
   const c = tileC(e.x), r = tileR(e.z);
   let best = null, bestD = fieldAt(field, c, r);
@@ -555,11 +609,23 @@ export function addHostage(x, z) {
   man.root.position.set(x, 0, z);
   man.armL.rotation.x = man.armR.rotation.x = -2.9;
   level.group.add(man.root);
-  level.hostage = { man, x, z, r: 0.32, alive: true, saved: false };
+  level.hostage = { man, x, z, r: 0.32, alive: true, saved: false, hp: HOSTAGE_HP, bar: null };
 }
-export function killHostage(dx, dz) {
+// 救出來之後會被敵人的流彈打到，打滿 HOSTAGE_HP 發就死
+const HOSTAGE_HP = 5;
+export function hurtHostage(dx, dz) {
+  const h = level.hostage;
+  h.hp--;
+  setFlash(h.man, true); setTimeout(() => setFlash(h.man, false), 90);
+  burst(h.x, 1, h.z, [0xe8e4da, 0xf0c9a0], 3, 2, dx * 2, dz * 2);
+  sfx.hit();
+  if (!h.bar) h.bar = makeBar(0x40e090);
+  if (h.hp <= 0) killHostage(dx, dz, '人質被敵人打死了');
+}
+export function killHostage(dx, dz, why = '人質被你打中了') {
   const h = level.hostage;
   h.alive = false;
+  if (h.bar) { freeBar(h.bar); h.bar = null; }
   voxelBurst(h.man.root, 60, 4, dx * 4, dz * 4);
   level.group.remove(h.man.root);
   sparks(h.x, 1, h.z, 0xff3030, 16);
@@ -569,7 +635,7 @@ export function killHostage(dx, dz) {
   player.laser.g.visible = player.guide.g.visible = false;
   setTimeout(() => {
     if (G.state !== 'failed') return;
-    showPanel('任務失敗', `${levelLabel()}<br>人質被你打中了`, [
+    showPanel('任務失敗', `${levelLabel()}<br>${why}`, [
       { label: '重來這關', primary: true, run: retryLevel },
       { label: leaveLabel(), run: leaveLevel },
     ]);
@@ -644,7 +710,7 @@ export function addItem(x, z) {
 }
 
 // ---------- 關卡目標 ----------
-// clear 清光敵人、activate 開關全部打開、hold 撐住幾秒、extract 拿到物資撤離、rescue 清光敵人後碰到人質
+// clear 清光敵人、activate 開關全部打開、hold 撐住幾秒、extract 拿到物資撤離、rescue 碰到人質救出、帶到出口
 export function updateObjectives(dt) {
   const L = level, goal = L.goal;
   if (G.state !== 'play') return;
@@ -665,7 +731,8 @@ export function updateObjectives(dt) {
     // 玩家不能穿過人質
     const dx = player.x - h.x, dz = player.z - h.z, d = Math.hypot(dx, dz), min = player.r + h.r;
     if (d < min && d > 1e-4) { player.x = h.x + dx / d * min; player.z = h.z + dz / d * min; }
-    if (!h.saved && enemies.length === 0 && d < min + 0.35) {
+    // 不用先清光：碰到就救出來，之後人質跟著你走、可能被流彈打到
+    if (!h.saved && d < min + 0.35) {
       h.saved = true;
       h.trail = [];
       h.man.armL.rotation.x = h.man.armR.rotation.x = 0;
@@ -673,6 +740,7 @@ export function updateObjectives(dt) {
       openExit('人質救出');
     }
     if (h.saved) followPlayer(h, dt, d);
+    if (h.bar) setBar(h.bar, h.x, 1.9, h.z, h.hp / HOSTAGE_HP);
   }
   if (L.doorOpen) return;
   if (goal === 'clear' && enemies.length === 0) openExit();
@@ -685,19 +753,23 @@ export function updateObjectives(dt) {
 export function goalText() {
   const L = level;
   if (!L || G.state === 'menu') return '';
-  if (L.doorOpen) return L.goal === 'hold' || L.goal === 'extract' ? '快跑到出口' : '前往出口';
+  if (L.doorOpen) return L.goal === 'rescue' ? '帶人質到出口' : L.goal === 'hold' || L.goal === 'extract' ? '快跑到出口' : '前往出口';
   switch (L.goal) {
     case 'activate': return `打開開關 ${L.switches.filter(s => s.on).length}/${L.switches.length}`;
     case 'hold': return `撐住 ${Math.ceil(L.holdT)} 秒`;
     case 'extract': return '找到物資';
-    case 'rescue': return enemies.length ? `清除敵人・剩 ${enemies.length}` : '去碰人質';
+    case 'rescue': return enemies.length ? `救出人質・敵人剩 ${enemies.length}` : '去碰人質';
     default: return `清除敵人・剩 ${enemies.length}`;
   }
 }
 
 export function loadLevel(mode, index) {
   clearEntities();
-  if (level) { scene.remove(level.group); for (const s of level.switches) freeBar(s.bar); }
+  if (level) {
+    scene.remove(level.group);
+    for (const s of level.switches) freeBar(s.bar);
+    if (level.hostage?.bar) freeBar(level.hostage.bar);
+  }
   const defs = levelDefs(mode);
   const def = defs[index % defs.length];
   const rows = mapRows(def), w = Math.max(...rows.map(r => r.length));
@@ -707,7 +779,7 @@ export function loadLevel(mode, index) {
   level = {
     group: new THREE.Group(), grid, doorOpen: false, doorMeshes: [], exitMeshes: [],
     doors: new Map(), mode, index, dark: !!def.dark, lamps: [], def,
-    switches: [], vents: [], cells: new Map(), cellCols: [], cellMesh: null, spawner: null, hostage: null, item: null,
+    switches: [], vents: [], swings: [], cells: new Map(), cellCols: [], cellMesh: null, spawner: null, hostage: null, item: null,
     goal: def.goal ?? 'clear', holdT: def.hold ?? 0,
   };
   setLighting(level.dark);
@@ -754,6 +826,7 @@ export function loadLevel(mode, index) {
       level.group.add(m);
       level.doorMeshes.push(m);
     } else if (ch === 'B') addCell(c, r, 'door');
+    else if (ch === 'd') addSwingDoor(c, r);
     else if (ch === 'P') { player.x = x; player.z = z; }
     else if ('RSHZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
     else if (ch === 'L' || ch === 'l') addLamp(x, z, ch === 'l');

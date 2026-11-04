@@ -4,7 +4,7 @@ import { buildWeapon, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
 import { BODY_LIGHT_R, FLASH_ANGLE, FLASH_RANGE, G, GUN_Y, addTrauma, scene } from './core.js';
 import { burst, freeBar, freeLaser, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, showMarker, sparks, voxelBurst } from './fx.js';
-import { H, LAMP_R, bangDoor, castRay, collide, destroyDoor, doorAt, findCoverPath, flowAt, hasLOS, level, navDir, rayCircle, smashArea, tileC, tileR, zflow } from './world.js';
+import { H, LAMP_R, W, bangDoor, castRay, collide, destroyDoor, doorAt, findCoverPath, hasLOS, level, navDir, rayCircle, seekDir, smashArea, soundField, tileC, tileR, zflow } from './world.js';
 import { spawnBullet } from './bullets.js';
 import { hurtPlayer, muzzleOf, player } from './player.js';
 
@@ -66,7 +66,12 @@ export function becomeAware(e) {
   e.aware = true;
   e.state = e.type === 'R' || e.def.zombie ? 'chase' : 'move';
   e.t = 0.15 + Math.random() * 0.3;
-  if (!e.def.zombie) { showMarker(e); sfx.alert(); return; }
+  if (!e.def.zombie) {
+    showMarker(e); sfx.alert();
+    // 喊人：附近（聲音傳得到）的同伴也跟著警戒；被喊醒的不會再往外喊
+    if (!e.byShout) alertNoise(SHOUT_RANGE, e.x, e.z, true);
+    return;
+  }
   // 殭屍：發出低吼，附近看得到牠的同伴跟著醒來
   if (G.now - G.lastGroan > 0.35) { G.lastGroan = G.now; e.type === 'G' ? sfx.roar() : sfx.groan(); }
   for (const o of enemies) {
@@ -74,12 +79,20 @@ export function becomeAware(e) {
     if (Math.hypot(o.x - e.x, o.z - e.z) < 4.5 && hasLOS(o.x, o.z, e.x, e.z)) o.react = 0.25 + Math.random() * 0.5;
   }
 }
-// 槍聲 / 破門聲：沿著走得到的路傳（關著的門會擋）
-export function alertNoise(range) {
+// 槍聲 / 破門聲 / 喊人：沿著走得到的路傳，關著的門會悶住一些（見 soundField）
+// 聽到的敵人過一下就進入警戒，往聲音來源（玩家）移動；路被門擋住就在門後守著
+export const SHOUT_RANGE = 10;
+export function alertNoise(range, x = player.x, z = player.z, shout = false) {
+  if (!enemies.some(e => !e.aware && e.react < 0)) return;
+  const f = soundField(x, z, range);
   for (const e of enemies) {
     if (e.aware || e.react >= 0) continue;
-    const d = flowAt(e.x, e.z);
-    if (d >= 0 && d <= range) e.react = e.def.react * (0.9 + Math.random() * 0.5);
+    const c = tileC(e.x), r = tileR(e.z);
+    const d = c >= 0 && r >= 0 && c < W && r < H ? f[c + r * W] : -1;
+    // 殭屍比較遲鈍，隔著門比較聽不到
+    if (d < 0 || d > (e.def.zombie ? range * 0.7 : range)) continue;
+    e.react = e.def.react * (shout ? 1.2 : 0.9) + Math.random() * (shout ? 0.6 : 0.4) + d * 0.03;
+    e.byShout = shout;
   }
 }
 
@@ -235,8 +248,9 @@ export function updateEnemies(dt) {
         case 'idle': if (e.t <= 0) e.state = 'chase'; break;
         case 'chase': {
           if (!player.alive) break;
-          const d = los ? { x: nx, z: nz } : navDir(e);
-          wx = d.x * spd; wz = d.z * spd; faceX = d.x; faceZ = d.z;
+          const d = los ? { x: nx, z: nz } : seekDir(e);
+          const ds = d.hold ? 0 : spd;
+          wx = d.x * ds; wz = d.z * ds; faceX = d.x; faceZ = d.z;
           if (los && dist < 2.9) { e.state = 'wind'; e.t = 0.55; e.lx = nx; e.lz = nz; sfx.lunge(); }
           break;
         }
@@ -264,10 +278,11 @@ export function updateEnemies(dt) {
         case 'move': {
           if (!player.alive) break;
           let d;
-          if (!los || dist > 9) d = navDir(e);
+          if (!los || dist > 9) d = seekDir(e);
           else if (dist < 3.8) d = { x: -nx, z: -nz };
           else d = { x: -nz * e.strafe + nx * 0.2, z: nx * e.strafe + nz * 0.2 };
-          wx = d.x * spd; wz = d.z * spd;
+          const ds = d.hold ? 0 : spd;   // 門後守著
+          wx = d.x * ds; wz = d.z * ds;
           if (los) { faceX = nx; faceZ = nz; } else { faceX = d.x; faceZ = d.z; }
           if (e.t <= 0) {
             if (los && dist < 12) {
@@ -304,6 +319,7 @@ export function updateEnemies(dt) {
             }
             muzzleFlash(m.x, GUN_Y * e.def.scale, m.z, heavy ? 0xc060ff : 0xff5030);
             e.burstLeft--;
+            if (G.now - (e.lastShot ?? -9) > 1) alertNoise(heavy ? 16 : 14, e.x, e.z);
             e.lastShot = G.now;
             e.ammo--;
           }

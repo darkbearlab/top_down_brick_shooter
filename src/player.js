@@ -212,7 +212,7 @@ export function updatePlayer(dt) {
       addTrauma(0.03 + cst.kick * 0.012);
       sfx.shoot();
       cs.ammo--;
-      alertNoise(cst.noise);
+      alertNoise(cst.noise * 2.5);   // 室內槍聲很大聲：大概整層樓都聽得到
       if (cs.ammo <= 0) startReload();   // 打空自動換彈
       updateAmmoHud();
     }

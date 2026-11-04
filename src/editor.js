@@ -17,6 +17,7 @@ const PALETTE = [
     { ch: 'D', name: '出口', bg: '#c8243c', glyph: '⇧' },
     { ch: 'W', name: '磚牆', bg: '#7a5644', glyph: '▦' },
     { ch: 'B', name: '木門', bg: '#a47a4a', glyph: '▭' },
+    { ch: 'd', name: '推門', bg: '#6a4a2a', glyph: '◫' },
     { ch: 'h', name: '沙包', bg: '#8a7a55', glyph: '▬' },
     { ch: 'V', name: '通風口', bg: '#15171c', glyph: '≡' },
   ] },

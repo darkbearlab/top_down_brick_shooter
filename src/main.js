@@ -4,6 +4,7 @@ import { setHand } from './models.js';
 import { loadLoadout, openLoadout } from './loadout.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
 import { openEditor } from './editor.js';
+import { updateSwingDoors } from './swingdoors.js';
 import { setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
 import { debris, fx, markers, setWallTest, updateMarkers, updateParticles } from './fx.js';
 import { MODE_NAMES, setTestLevel, W, H, wallAt, buildFlow, goalText, level, levelDefs, levelLabel, loadLevel, updateGates, updateLamps, updateObjectives, updateSpawner, updateSwitches } from './world.js';
@@ -247,7 +248,7 @@ addEventListener('visibilitychange', () => { if (document.hidden && !TICK) pause
 
 
 
-window.__dbg = { player, enemies, bullets, get level() { return level; }, startGame, spawnBullet, killEnemy };  // 除錯用
+window.__dbg = { player, enemies, bullets, get level() { return level; }, startGame, spawnBullet, killEnemy: (e, dx = 0, dz = 0) => killEnemy(e, dx, dz) };  // 除錯用
 
 try { if (localStorage.getItem(HAND_KEY) === '-1') setHand(player.man, -1); } catch { /* 用預設右手 */ }
 setWallTest(wallAt);
@@ -280,6 +281,7 @@ export function frame(t) {
     updateBullets(dt);
     updateMarkers(dt);
     updateSwitches(dt);
+    updateSwingDoors(dt);
     updateGates(dt);
     updateSpawner(dt);
     updateObjectives(dt);
