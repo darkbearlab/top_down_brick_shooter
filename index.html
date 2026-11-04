@@ -73,6 +73,8 @@
     <div id="ceParts" class="ce-list"></div>
     <h3>工具</h3>
     <div id="ceTools" class="ce-list"></div>
+    <h3>筆刷大小（[ ]）</h3>
+    <div id="ceBrush" class="ce-list ce-brush"></div>
     <label class="ce-check"><input type="checkbox" id="ceMirror"> 左右對稱（M）</label>
     <label class="ce-check"><input type="checkbox" id="ceTwin" checked> 左右手腳一起改</label>
     <h3>顏色</h3>
@@ -80,12 +82,20 @@
     <div id="cePalette" class="ce-pal"></div>
     <div class="ce-sub">這個造型用到的顏色</div>
     <div id="ceUsed" class="ce-pal"></div>
+    <h3>參考圖</h3>
+    <button id="ceRefLoad" class="chip">載入圖片…</button>
+    <input type="file" id="ceRefFile" accept="image/*" hidden>
+    <div class="ce-sub">也可以把圖片拖進來，或按 Ctrl+V 貼上；點圖上任一點就吸那個顏色</div>
   </div>
   <div class="ce-center">
     <div id="ceView"></div>
+    <div id="ceRef" class="hidden">
+      <div class="ce-ref-bar"><span class="ce-ref-sw" id="ceRefSw"></span><span>參考圖・點一下吸色</span><button id="ceRefClose" aria-label="關閉參考圖">✕</button></div>
+      <div class="ce-ref-body"><img id="ceRefImg" alt="參考圖" draggable="false"></div>
+    </div>
     <div id="ceMsg"></div>
     <div class="ce-keys">左鍵：放方塊（堆在點到的那一面）・右鍵：挖掉・Shift + 左鍵：上色・Alt + 左鍵：吸顏色<br>
-      拖曳：轉視角・滾輪：縮放・Ctrl+Z / Ctrl+Y：復原 / 重做・數字 1–6：換部位<br>
+      按住拖曳：連續畫（放方塊 / 挖會鎖在同一層）・在空白處拖曳或中鍵拖曳：轉視角・滾輪：縮放・Ctrl+Z / Ctrl+Y：復原 / 重做・數字 1–6：換部位<br>
       橘框 = 骨架核心（頭、身體在中心，手腳在肩膀 / 髖關節）：只有它刪不掉，其他方塊都能挖掉重堆；白框 = 這個部位能堆的範圍</div>
   </div>
   <div class="ce-right">

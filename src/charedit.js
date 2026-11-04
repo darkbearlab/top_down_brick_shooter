@@ -22,7 +22,7 @@ const PALETTE = [
 const TOOLS = { place: '堆方塊（B）', paint: '上色（F）', pick: '吸顏色（I）' };
 const ANIMS = { idle: '站著', walk: '走路', aim: '舉槍走' };
 
-let look = null, cur = 'head', tool = 'place', color = 0x2f8cff, anim = 'aim';
+let look = null, cur = 'head', tool = 'place', color = 0x2f8cff, anim = 'aim', brush = 1;
 let undo = [], redo = [];
 let view = null, prev = null;
 
@@ -139,7 +139,10 @@ function focusPart() {
 }
 
 // ---------- 滑鼠 ----------
-let mouse = null;   // { x, y, sx, sy, btn, drag }
+// 左鍵按在方塊上 = 一筆（拖曳就連續畫）；按在空白處或中鍵 = 轉視角
+// 放方塊 / 挖方塊的一筆會鎖在第一下的那一層，才不會一路往鏡頭疊過來
+let mouse = null;   // { sx, sy, x, y, mode: 'orbit' | 'stroke' | 'none', st }
+const opOf = (btn, e) => btn === 2 ? 'erase' : e.altKey ? 'pick' : e.shiftKey ? 'paint' : tool;
 function bindView(v) {
   const c = v.renderer.domElement;
   const setNdc = e => {
@@ -150,34 +153,46 @@ function bindView(v) {
   c.addEventListener('pointerdown', e => {
     setNdc(e);
     c.setPointerCapture(e.pointerId);
-    mouse = { sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, btn: e.button, drag: false };
-  });
-  c.addEventListener('pointermove', e => {
-    setNdc(e);
-    if (mouse) {
-      if (!mouse.drag && Math.hypot(e.clientX - mouse.sx, e.clientY - mouse.sy) > 4) { mouse.drag = true; v.el.classList.add('drag'); }
-      if (mouse.drag) {
-        v.yaw -= (e.clientX - mouse.x) * 0.008;
-        v.pitch = Math.max(-1.4, Math.min(1.4, v.pitch + (e.clientY - mouse.y) * 0.008));
+    mouse = { sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, mode: 'orbit' };
+    const h = e.button === 1 ? null : pickVoxel();
+    if (h) {
+      const op = opOf(e.button, e);
+      if (op === 'pick') {
+        setColor(look.parts[cur].get(key(h.x, h.y, h.z))[3]);
+        if (tool === 'pick') setTool('place');
+        mouse.mode = 'none';
+      } else {
+        mouse.mode = 'stroke';
+        mouse.st = startStroke(op, h);
       }
-      mouse.x = e.clientX; mouse.y = e.clientY;
     }
     updateHover();
   });
-  c.addEventListener('pointerup', e => {
+  c.addEventListener('pointermove', e => {
     setNdc(e);
-    if (mouse && !mouse.drag) act(mouse.btn, e);
-    mouse = null; v.el.classList.remove('drag');
+    if (mouse?.mode === 'orbit' && Math.hypot(e.clientX - mouse.sx, e.clientY - mouse.sy) > 3) {
+      v.el.classList.add('drag');
+      v.yaw -= (e.clientX - mouse.x) * 0.008;
+      v.pitch = Math.max(-1.4, Math.min(1.4, v.pitch + (e.clientY - mouse.y) * 0.008));
+    } else if (mouse?.mode === 'stroke') continueStroke(mouse.st);
+    if (mouse) { mouse.x = e.clientX; mouse.y = e.clientY; }
     updateHover();
   });
-  c.addEventListener('pointerleave', () => { v.ndc = null; updateHover(); });
+  const up = () => {
+    if (mouse?.mode === 'stroke') endStroke(mouse.st);
+    mouse = null; v.el.classList.remove('drag');
+    updateHover();
+  };
+  c.addEventListener('pointerup', e => { setNdc(e); up(); });
+  c.addEventListener('pointercancel', up);
+  c.addEventListener('pointerleave', () => { if (!mouse) { v.ndc = null; updateHover(); } });
   c.addEventListener('wheel', e => {
     e.preventDefault();
     v.dist = Math.max(0.25, Math.min(6, v.dist * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
   }, { passive: false });
 }
 
-// 指到哪一顆、哪一面
+// 指到哪一顆、哪一面（axis 0/1/2 = x/y/z，sign = 面朝哪邊）
 function pickVoxel() {
   const v = view;
   if (!v.ndc || !v.inst) return null;
@@ -186,27 +201,39 @@ function pickVoxel() {
   const hit = v.ray.intersectObject(v.inst)[0];
   if (!hit || hit.instanceId === undefined) return null;
   const [x, y, z] = v.inst.userData.coords[hit.instanceId];
-  const n = hit.face.normal;
-  return { x, y, z, nx: x + Math.round(n.x), ny: y + Math.round(n.y), nz: z + Math.round(n.z) };
+  const n = [Math.round(hit.face.normal.x), Math.round(hit.face.normal.y), Math.round(hit.face.normal.z)];
+  const axis = n.findIndex(a => a !== 0);
+  return { x, y, z, nx: x + n[0], ny: y + n[1], nz: z + n[2], axis, sign: n[axis] };
 }
 
-function updateHover() {
+// 滑鼠射線打到「某一軸 = coord」那個平面的哪一格（部位的格子座標）
+function rayOnPlane(axis, coord) {
   const v = view;
-  if (!v) return;
-  const h = mouse?.drag ? null : pickVoxel();
-  v.hover = h;
-  v.ghost.visible = v.outline.visible = false;
-  if (!h) return;
+  if (!v.ndc) return null;
+  v.camera.updateMatrixWorld();
+  v.ray.setFromCamera(v.ndc, v.camera);
   const o = partOrigin(cur);
-  const at = (x, y, z, obj) => obj.position.set(o[0] + (x + 0.5) * V, o[1] + (y + 0.5) * V, o[2] + (z + 0.5) * V);
-  const mode = v.mods?.alt ? 'pick' : v.mods?.shift ? 'paint' : tool;
-  if (mode === 'place' && inSpace(cur, h.nx, h.ny, h.nz)) {
-    at(h.nx, h.ny, h.nz, v.ghost);
-    v.ghost.material.color.setHex(color);
-    v.ghost.visible = true;
+  const ro = v.ray.ray.origin, rd = v.ray.ray.direction;
+  const O = [(ro.x - o[0]) / V, (ro.y - o[1]) / V, (ro.z - o[2]) / V], D = [rd.x, rd.y, rd.z];
+  if (Math.abs(D[axis]) < 1e-6) return null;
+  const t = (coord - O[axis]) / D[axis];
+  if (t < 0) return null;
+  return [0, 1, 2].map(a => Math.floor(O[a] + D[a] * t));
+}
+
+// 筆刷：size × size（放 / 挖是立方體，上色是一個面）
+function brushCells(cx, cy, cz, axis, sign, op) {
+  const n = brush, lo = -Math.floor((n - 1) / 2);
+  const out = [];
+  const depth = op === 'paint' ? 1 : n;
+  const dir = op === 'erase' ? -sign : sign;   // 挖：往裡面；放：往外面
+  const [b, c] = [0, 1, 2].filter(a => a !== axis);
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) for (let d = 0; d < depth; d++) {
+    const p = [cx, cy, cz];
+    p[b] += lo + i; p[c] += lo + j; p[axis] += dir * d;
+    out.push(p);
   }
-  at(h.x, h.y, h.z, v.outline);
-  v.outline.visible = true;
+  return out;
 }
 
 // 這次操作要動到哪些格子：左右對稱、左右手腳一起改
@@ -215,40 +242,98 @@ function targets(x, y, z) {
   if ($('ceMirror').checked) out.push([cur, mirrorX(cur, x), y, z]);
   const twin = LOOK_PARTS[cur].twin;
   if (twin && $('ceTwin').checked) for (const [, tx, ty, tz] of [...out]) out.push([twin, mirrorX(twin, tx), ty, tz]);
-  const seen = new Set();
-  return out.filter(t => { const k = t.join(); if (seen.has(k)) return false; seen.add(k); return true; });
+  return out;
 }
 
-function act(btn, e) {
-  const h = pickVoxel();
-  if (!h) return;
-  const mode = btn === 2 ? 'erase' : e.altKey ? 'pick' : e.shiftKey ? 'paint' : tool;
-  if (mode === 'pick') {
-    setColor(look.parts[cur].get(key(h.x, h.y, h.z))[3]);
-    if (tool === 'pick') setTool('place');
-    return;
+// 套用一次筆刷；回傳有沒有改到
+function applyBrush(op, cells) {
+  const seen = new Set();
+  const ts = [];
+  for (const [x, y, z] of cells) for (const t of targets(x, y, z)) {
+    const k = t.join();
+    if (seen.has(k) || !inSpace(t[0], t[1], t[2], t[3])) continue;
+    seen.add(k); ts.push(t);
   }
-  const before = cloneLook(look);
   let changed = false;
-  if (mode === 'place') {
-    if (!inSpace(cur, h.nx, h.ny, h.nz)) return msg('超出這個部位能堆的範圍');
-    const ts = targets(h.nx, h.ny, h.nz).filter(([p, x, y, z]) => inSpace(p, x, y, z) && !look.parts[p].has(key(x, y, z)));
-    if (countVoxels(look) + ts.length > MAX_VOXELS) return msg(`方塊上限 ${MAX_VOXELS} 顆`);
-    for (const [p, x, y, z] of ts) { look.parts[p].set(key(x, y, z), [x, y, z, color]); changed = true; }
-  } else if (mode === 'erase') {
-    if (inCore(cur, h.x, h.y, h.z)) return msg('骨架核心刪不掉，只能換顏色');
-    for (const [p, x, y, z] of targets(h.x, h.y, h.z)) if (!inCore(p, x, y, z) && look.parts[p].delete(key(x, y, z))) changed = true;
-  } else if (mode === 'paint') {
-    for (const [p, x, y, z] of targets(h.x, h.y, h.z)) {
+  if (op === 'place') {
+    const add = ts.filter(([p, x, y, z]) => !look.parts[p].has(key(x, y, z)));
+    if (countVoxels(look) + add.length > MAX_VOXELS) { msg(`方塊上限 ${MAX_VOXELS} 顆`); return false; }
+    for (const [p, x, y, z] of add) { look.parts[p].set(key(x, y, z), [x, y, z, color]); changed = true; }
+  } else if (op === 'erase') {
+    for (const [p, x, y, z] of ts) if (!inCore(p, x, y, z) && look.parts[p].delete(key(x, y, z))) changed = true;
+  } else if (op === 'paint') {
+    for (const [p, x, y, z] of ts) {
       const vx = look.parts[p].get(key(x, y, z));
       if (vx && vx[3] !== color) { vx[3] = color; changed = true; }
     }
   }
-  if (!changed) return;
-  undo.push(before); if (undo.length > 100) undo.shift();
+  return changed;
+}
+
+function startStroke(op, h) {
+  const st = { op, before: cloneLook(look), changed: false, done: new Set(), axis: h.axis, sign: h.sign };
+  // 鎖定的那一層：放方塊 = 點到那面外面一層；挖 = 點到的那顆那一層
+  const hit = [h.x, h.y, h.z];
+  const c0 = op === 'place' ? [h.nx, h.ny, h.nz] : hit;
+  st.layer = c0[h.axis];
+  st.plane = h.sign > 0 ? hit[h.axis] + 1 : hit[h.axis];
+  if (op === 'place' && !inSpace(cur, ...c0)) { msg('超出這個部位能堆的範圍'); st.dead = true; return st; }
+  if (op === 'erase' && brush === 1 && inCore(cur, h.x, h.y, h.z)) msg('骨架核心刪不掉，只能換顏色');
+  strokeAt(st, c0, h.axis, h.sign);
+  return st;
+}
+function strokeAt(st, c, axis, sign) {
+  const k = c.join() + '|' + axis + sign;
+  if (st.done.has(k)) return;
+  st.done.add(k);
+  if (applyBrush(st.op, brushCells(c[0], c[1], c[2], axis, sign, st.op))) {
+    st.changed = true;
+    rebuildView();
+    renderCount();
+  }
+}
+function continueStroke(st) {
+  if (st.dead) return;
+  if (st.op === 'paint') {
+    const h = pickVoxel();
+    if (h) strokeAt(st, [h.x, h.y, h.z], h.axis, h.sign);
+    return;
+  }
+  const c = rayOnPlane(st.axis, st.plane);
+  if (!c) return;
+  c[st.axis] = st.layer;
+  strokeAt(st, c, st.axis, st.sign);
+}
+function endStroke(st) {
+  if (!st.changed) return;
+  undo.push(st.before); if (undo.length > 100) undo.shift();
   redo = [];
   sfx.click();
   refresh();
+}
+
+// 滑鼠指著的地方：畫出筆刷會動到的範圍
+function updateHover() {
+  const v = view;
+  if (!v) return;
+  v.ghost.visible = v.outline.visible = false;
+  if (mouse && mouse.mode !== 'stroke') return;
+  const h = pickVoxel();
+  if (!h) return;
+  const op = mouse?.st?.op ?? (v.mods?.alt ? 'pick' : v.mods?.shift ? 'paint' : tool);
+  const o = partOrigin(cur);
+  const fit = (cells, obj) => {
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (const p of cells) for (let a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], p[a]); mx[a] = Math.max(mx[a], p[a]); }
+    obj.position.set(o[0] + (mn[0] + mx[0] + 1) / 2 * V, o[1] + (mn[1] + mx[1] + 1) / 2 * V, o[2] + (mn[2] + mx[2] + 1) / 2 * V);
+    obj.scale.set(mx[0] - mn[0] + 1, mx[1] - mn[1] + 1, mx[2] - mn[2] + 1);
+    obj.visible = true;
+  };
+  if (op === 'place' && inSpace(cur, h.nx, h.ny, h.nz)) {
+    fit(brushCells(h.nx, h.ny, h.nz, h.axis, h.sign, 'place'), v.ghost);
+    v.ghost.material.color.setHex(color);
+  }
+  fit(op === 'pick' ? [[h.x, h.y, h.z]] : brushCells(h.x, h.y, h.z, h.axis, h.sign, op === 'place' ? 'paint' : op), v.outline);
 }
 
 let msgT = 0;
@@ -339,8 +424,10 @@ function renderSide() {
   const used = new Set();
   for (const p of PART_KEYS) for (const v of look.parts[p].values()) used.add(v[3]);
   swatches('ceUsed', [...used].slice(0, 32));
-  $('ceCount').textContent = `方塊 ${countVoxels(look)} / ${MAX_VOXELS}`;
+  chips('ceBrush', { 1: '1', 2: '2', 3: '3', 4: '4', 5: '5' }, b => +b === brush, b => { brush = +b; renderSide(); updateHover(); });
+  renderCount();
 }
+function renderCount() { $('ceCount').textContent = `方塊 ${countVoxels(look)} / ${MAX_VOXELS}`; }
 function refresh() { rebuildView(); rebuildPrev(); renderSide(); }
 
 function doUndo() { if (!undo.length) return; redo.push(cloneLook(look)); look = undo.pop(); refresh(); }
@@ -357,6 +444,7 @@ function onKey(e) {
   else if (k === 'f') setTool('paint');
   else if (k === 'i') setTool('pick');
   else if (k === 'm') { $('ceMirror').checked = !$('ceMirror').checked; }
+  else if (k === '[' || k === ']') { brush = Math.max(1, Math.min(5, brush + (k === ']' ? 1 : -1))); renderSide(); updateHover(); }
   else if (k >= '1' && k <= '6') setPart(PART_KEYS[+k - 1]);
   else if (e.key === 'Shift' || e.key === 'Alt') { view.mods = { shift: e.shiftKey, alt: e.altKey }; updateHover(); }
   if (e.key === 'Alt') e.preventDefault();
@@ -410,6 +498,76 @@ function wire() {
     try { const L = parseLook($('ceCode').value.trim()); change(() => { look = L; }); msg('匯入完成'); }
     catch { msg('造型碼看不懂'); }
   };
+  wireRef();
   addEventListener('keydown', onKey);
   addEventListener('keyup', onKeyUp);
+}
+
+// ---------- 參考圖：放在編輯視窗旁邊，點一下吸色 ----------
+const REF_KEY = 'brickshooter.ceref';
+const refCanvas = document.createElement('canvas');
+let refCtx = null;
+function showRef(src, remember) {
+  const img = $('ceRefImg');
+  img.onload = () => {
+    refCanvas.width = img.naturalWidth; refCanvas.height = img.naturalHeight;
+    refCtx = refCanvas.getContext('2d', { willReadFrequently: true });
+    refCtx.drawImage(img, 0, 0);
+    $('ceRef').classList.remove('hidden');
+    if (remember) { try { localStorage.setItem(REF_KEY, src); } catch { /* 圖太大存不了，只影響下次打開 */ } }
+  };
+  img.src = src;
+}
+function loadRefFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const r = new FileReader();
+  r.onload = () => showRef(r.result, true);
+  r.readAsDataURL(file);
+}
+function refColorAt(e) {
+  const img = $('ceRefImg');
+  if (!refCtx) return null;
+  const rc = img.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rc.left) / rc.width * img.naturalWidth);
+  const y = Math.floor((e.clientY - rc.top) / rc.height * img.naturalHeight);
+  if (x < 0 || y < 0 || x >= img.naturalWidth || y >= img.naturalHeight) return null;
+  const [r, g, b, a] = refCtx.getImageData(x, y, 1, 1).data;
+  return a < 10 ? null : (r << 16) | (g << 8) | b;
+}
+function wireRef() {
+  $('ceRefLoad').onclick = () => $('ceRefFile').click();
+  $('ceRefFile').onchange = e => { loadRefFile(e.target.files[0]); e.target.value = ''; };
+  $('ceRefClose').onclick = () => { $('ceRef').classList.add('hidden'); try { localStorage.removeItem(REF_KEY); } catch { /* 沒差 */ } };
+  const img = $('ceRefImg');
+  img.addEventListener('pointermove', e => {
+    const c = refColorAt(e);
+    $('ceRefSw').style.background = c === null ? 'transparent' : '#' + c.toString(16).padStart(6, '0');
+  });
+  img.addEventListener('click', e => { const c = refColorAt(e); if (c !== null) { setColor(c); sfx.click(); } });
+  // 拖著標題列移動面板
+  const bar = $('ceRef').querySelector('.ce-ref-bar');
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.tagName === 'BUTTON') return;
+    const panel = $('ceRef'), box = panel.parentElement.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+    const ox = e.clientX - pr.left, oy = e.clientY - pr.top;
+    bar.setPointerCapture(e.pointerId);
+    const mv = ev => {
+      panel.style.left = Math.max(0, Math.min(box.width - 60, ev.clientX - box.left - ox)) + 'px';
+      panel.style.top = Math.max(0, Math.min(box.height - 30, ev.clientY - box.top - oy)) + 'px';
+      panel.style.right = 'auto';
+    };
+    const upH = () => { bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', upH); };
+    bar.addEventListener('pointermove', mv);
+    bar.addEventListener('pointerup', upH);
+  });
+  // 拖檔案進來、Ctrl+V 貼上
+  const ce = $('charEdit');
+  ce.addEventListener('dragover', e => e.preventDefault());
+  ce.addEventListener('drop', e => { e.preventDefault(); loadRefFile(e.dataTransfer.files[0]); });
+  addEventListener('paste', e => {
+    if (ce.classList.contains('hidden') || e.target.tagName === 'TEXTAREA') return;
+    const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'));
+    if (item) loadRefFile(item.getAsFile());
+  });
+  try { const s = localStorage.getItem(REF_KEY); if (s) showRef(s, false); } catch { /* 沒存過 */ }
 }

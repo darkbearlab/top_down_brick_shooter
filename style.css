@@ -168,6 +168,16 @@ html, body {
 #ceView canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 #ceView.drag canvas { cursor: grabbing; }
 .ce-keys { position: absolute; left: 12px; bottom: 10px; font-size: 12px; line-height: 1.6; opacity: .55; pointer-events: none; }
+#ceRef { position: absolute; top: 12px; right: 12px; width: 280px; height: 320px; min-width: 140px; min-height: 120px; resize: both; overflow: hidden;
+  display: flex; flex-direction: column; background: #0d1016; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.5); z-index: 2; }
+#ceRef.hidden { display: none; }
+.ce-ref-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 12px; cursor: move; background: rgba(255,255,255,.06); user-select: none; }
+.ce-ref-bar span:nth-child(2) { flex: 1; opacity: .75; }
+.ce-ref-bar button { background: none; border: 0; color: #e8ecf2; cursor: pointer; font-size: 14px; }
+.ce-ref-sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255,255,255,.3); }
+.ce-ref-body { flex: 1; overflow: auto; }
+#ceRefImg { display: block; width: 100%; image-rendering: pixelated; cursor: crosshair; }
+.ce-brush .chip { min-width: 34px; text-align: center; }
 #ceMsg { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(255,90,74,.9); font-size: 13px; font-weight: 700; opacity: 0; transition: opacity .25s; pointer-events: none; }
 #ceMsg.show { opacity: 1; }
 .ce-list { display: flex; flex-wrap: wrap; gap: 6px; }
