@@ -143,7 +143,7 @@ export const HELP_HTML = `<div class="keys">
 左上角 ⇄ 按鈕：切換武器<br><br>
 <b>電腦</b><br>
 WASD 移動・滑鼠瞄準・左鍵開火<br>
-R 換彈・Q 或滾輪切換武器・Esc 暫停<br><br>
+R 換彈・滾輪或 1 / 2 切換武器<br>Q 左手持槍・E 右手持槍・Esc 暫停<br><br>
 <b>武器</b><br>
 淡白線＝你想瞄的方向，雷射＝槍口實際方向<br>
 越重的槍轉得越慢、切換也越慢<br><br>
@@ -165,24 +165,29 @@ R 換彈・Q 或滾輪切換武器・Esc 暫停<br><br>
 </div>`;
 
 // 進入畫面的功能清單：之後新增功能只要加一筆
+// 有 items 的是第二層選單
 export const MENU_ITEMS = [
-  { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
-  { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
-  { label: '黑暗模式', sub: `${DARK_LEVELS.length} 個關卡・只有手電筒和吊燈・殭屍成群`, run: () => startGame('dark', 0) },
+  { label: '任務模式', sub: '清房・破門攻堅・黑暗', items: [
+    { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
+    { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
+    { label: '黑暗模式', sub: `${DARK_LEVELS.length} 個關卡・只有手電筒和吊燈・殭屍成群`, run: () => startGame('dark', 0) },
+  ] },
   { label: '自訂戰鬥', sub: CUSTOM_LEVELS.length ? `${CUSTOM_LEVELS.length} 個關卡・用編輯器做的` : '還沒有關卡', run: showCustomList },
   { label: '關卡編輯器', sub: '擺物件、測試、複製 JSON（建議用電腦）', run: openEditor },
   { label: '武器與裝備', sub: () => player.slots.map(s => s.stats.name).join(' ＋ '), run: showLoadout },
   { label: '操作說明', sub: '搖桿、換彈、破門', run: () => showPanel('操作說明', HELP_HTML, [{ label: '返回', primary: true, run: hidePanel }]) },
 ];
-export function buildMenu() {
+export function buildMenu(items = MENU_ITEMS) {
   const box = $('menuButtons');
   box.innerHTML = '';
-  MENU_ITEMS.forEach((it, i) => {
+  const list = items === MENU_ITEMS ? items : [...items, { label: '← 返回', run: () => buildMenu() }];
+  list.forEach((it, i) => {
     const el = document.createElement('button');
     el.className = 'btn' + (i === 0 ? ' primary' : '');
     el.disabled = !!it.disabled;
-    el.innerHTML = `${it.label}<small>${(typeof it.sub === 'function' ? it.sub() : it.sub) || ''}</small>`;
-    el.addEventListener('click', () => { unlockAudio(); sfx.click(); it.run(); });
+    const sub = (typeof it.sub === 'function' ? it.sub() : it.sub) || '';
+    el.innerHTML = `${it.label}${sub ? `<small>${sub}</small>` : ''}`;
+    el.addEventListener('click', () => { unlockAudio(); sfx.click(); it.items ? buildMenu(it.items) : it.run(); });
     box.appendChild(el);
   });
 }
@@ -233,6 +238,7 @@ export function showMenu() {
   $('editor').classList.add('hidden');
   hidePanel();
   hudEl.classList.add('hidden');
+  buildMenu();
   menuEl.classList.remove('hidden');
   loadLevel('breach', 0);   // 當背景
   G.state = 'menu';
@@ -290,6 +296,8 @@ export function frame(t) {
   input.reloadPressed = false;
   input.swapPressed = false;
   input.handPressed = false;
+  input.handSet = 0;
+  input.slotSet = -1;
 
   updateLamps(raw);
   const gt = goalText();

@@ -18,7 +18,9 @@ export class Input {
     this.reloadPressed = false; // 單次事件，遊戲讀完要清掉
     this.pausePressed = false;
     this.swapPressed = false;
-    this.handPressed = false;
+    this.handPressed = false;   // 觸控按鈕：換另一手
+    this.handSet = 0;           // Q = -1 左手、E = 1 右手（重複按不會換手）
+    this.slotSet = -1;          // 數字鍵 1 / 2 直接選主 / 副武器
     el.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > 10) this.swapPressed = true; }, { passive: true });
 
     this.left = { id: null, ox: 0, oy: 0, x: 0, y: 0, el: document.getElementById('stickL') };
@@ -44,8 +46,10 @@ export class Input {
       this.keys.add(e.code);
       if (e.repeat) return;
       if (e.code === 'KeyR') this.reloadPressed = true;
-      if (e.code === 'KeyQ') this.swapPressed = true;
-      if (e.code === 'KeyE') this.handPressed = true;
+      if (e.code === 'KeyQ') this.handSet = -1;
+      if (e.code === 'KeyE') this.handSet = 1;
+      if (e.code === 'Digit1') this.slotSet = 0;
+      if (e.code === 'Digit2') this.slotSet = 1;
       if (e.code === 'Escape' || e.code === 'KeyP') this.pausePressed = true;
     });
     addEventListener('keyup', e => { this.keys.delete(e.code); });

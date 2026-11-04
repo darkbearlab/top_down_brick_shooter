@@ -82,8 +82,9 @@ export const playerMuzzle = () => muzzleOf(player.x, player.z, player.fx, player
 
 // 換持槍手，記在瀏覽器裡
 export const HAND_KEY = 'brickshooter.hand';
-export function toggleHand() {
-  setHand(player.man, -player.man.hand);
+export function toggleHand(hand = -player.man.hand) {
+  if (player.man.hand === hand) return;
+  setHand(player.man, hand);
   try { localStorage.setItem(HAND_KEY, player.man.hand); } catch { /* 存不了就只影響這次 */ }
   updateAmmoHud();
 }
@@ -171,7 +172,9 @@ export function updatePlayer(dt) {
 
   // 切槍
   if (input.swapPressed) startSwap();
+  if (input.slotSet >= 0 && input.slotSet !== p.cur && p.swapT <= 0) startSwap();
   if (input.handPressed) toggleHand();
+  if (input.handSet) toggleHand(input.handSet);
   if (p.swapT > 0) {
     p.swapT -= dt;
     if (!p.swapped && p.swapT <= p.swapDur / 2) {

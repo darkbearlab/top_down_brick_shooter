@@ -7,6 +7,8 @@ html, body {
   -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
 }
 #game, #game canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+/* 滑鼠游標＝準星 */
+#game canvas { cursor: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><g fill='none' stroke-linecap='round'><g stroke='%23000' stroke-opacity='.65' stroke-width='4'><circle cx='16' cy='16' r='8'/><path d='M16 2v7M16 23v7M2 16h7M23 16h7'/></g><g stroke='%23fff' stroke-width='2'><circle cx='16' cy='16' r='8'/><path d='M16 2v7M16 23v7M2 16h7M23 16h7'/></g></g><circle cx='16' cy='16' r='1.6' fill='%23ff4040'/></svg>") 16 16, crosshair; }
 
 #hud {
   position: fixed; left: 0; right: 0; top: 0;
