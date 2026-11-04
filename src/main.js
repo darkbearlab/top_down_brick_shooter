@@ -92,38 +92,79 @@ const toWorldZ = r => r - H / 2 + 0.5;
 const tileC = x => Math.floor(x + W / 2);
 const tileR = z => Math.floor(z + H / 2);
 
-function isWallTile(c, r) {
+// 實心的格子（不含可破壞的格子）
+function isSolidTile(c, r) {
   if (c < 0 || r < 0 || c >= W || r >= H) return true;
   const ch = level.grid[r][c];
-  if (ch === '#' || ch === 'V' || ch === 'W') return true;
+  if (ch === '#' || ch === 'V') return true;
   if (ch === 'D') return !level.doorOpen;
-  if (ch === 'B' || ch === '=') return !level.doors.get(c + r * W).open;
+  if (ch === '=') return !level.doors.get(c + r * W).open;
   return false;
 }
-const doorAt = (c, r) => (c >= 0 && r >= 0 && c < W && r < H) ? level.doors.get(c + r * W) : undefined;
+// 尋路與粗略判定用：可破壞的格子要打出夠大的洞才算走得過
+function isWallTile(c, r) {
+  if (isSolidTile(c, r)) return true;
+  const cell = level.cells.get(c + r * W);
+  return !!cell && !cell.passable;
+}
+const inMap = (c, r) => c >= 0 && r >= 0 && c < W && r < H;
+const doorAt = (c, r) => inMap(c, r) ? level.doors.get(c + r * W) : undefined;
+const cellAt = (c, r) => inMap(c, r) ? level.cells.get(c + r * W) : undefined;
+
+// ---------- 可破壞的格子 ----------
+// 一格切成 4x4 根小柱，每根各自有血量，打爛就消失並噴出碎塊。木門、磚牆、半掩體都用這套
+const SUB = 4, COL = 1 / SUB;
+const colIndex = (cell, x, z) => {
+  const i = Math.min(SUB - 1, Math.max(0, Math.floor((x - (cell.c - W / 2)) * SUB)));
+  const j = Math.min(SUB - 1, Math.max(0, Math.floor((z - (cell.r - H / 2)) * SUB)));
+  return i + j * SUB;
+};
+const colPos = (cell, k) => ({
+  x: cell.c - W / 2 + ((k % SUB) + 0.5) * COL,
+  z: cell.r - H / 2 + (((k / SUB) | 0) + 0.5) * COL,
+});
+// 離 (x, z) 最近、還在的柱子；回傳柱子編號、距離、從點指向柱子的方向
+function nearestColumn(cell, x, z) {
+  let best = null;
+  for (let k = 0; k < SUB * SUB; k++) {
+    if (cell.hp[k] <= 0) continue;
+    const minX = cell.c - W / 2 + (k % SUB) * COL, minZ = cell.r - H / 2 + ((k / SUB) | 0) * COL;
+    const dx = Math.max(minX, Math.min(x, minX + COL)) - x, dz = Math.max(minZ, Math.min(z, minZ + COL)) - z;
+    const d = Math.hypot(dx, dz);
+    if (!best || d < best.d) best = { k, d, dx, dz };
+  }
+  return best;
+}
 const wallAt = (x, z) => isWallTile(tileC(x), tileR(z));
 
-// 圓形 vs 方格牆，推出去
+// 圓形 vs 方塊，推出去
+function pushOutBox(o, rad, minX, minZ, size) {
+  const px = Math.max(minX, Math.min(o.x, minX + size));
+  const pz = Math.max(minZ, Math.min(o.z, minZ + size));
+  const dx = o.x - px, dz = o.z - pz;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= rad * rad) return;
+  if (d2 > 1e-8) {
+    const d = Math.sqrt(d2), k = (rad - d) / d;
+    o.x += dx * k; o.z += dz * k;
+  } else {
+    // 中心卡進方塊裡：往最近的邊推
+    const cx = minX + size / 2, cz = minZ + size / 2;
+    if (Math.abs(o.x - cx) > Math.abs(o.z - cz)) o.x = o.x > cx ? minX + size + rad : minX - rad;
+    else o.z = o.z > cz ? minZ + size + rad : minZ - rad;
+  }
+}
+// 圓形 vs 方格牆；可破壞的格子逐根柱子算
 function collide(o, rad) {
   const c0 = tileC(o.x), r0 = tileR(o.z);
   for (let r = r0 - 1; r <= r0 + 1; r++) {
     for (let c = c0 - 1; c <= c0 + 1; c++) {
-      if (!isWallTile(c, r)) continue;
       const minX = c - W / 2, minZ = r - H / 2;
-      const px = Math.max(minX, Math.min(o.x, minX + 1));
-      const pz = Math.max(minZ, Math.min(o.z, minZ + 1));
-      const dx = o.x - px, dz = o.z - pz;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < rad * rad) {
-        if (d2 > 1e-8) {
-          const d = Math.sqrt(d2), k = (rad - d) / d;
-          o.x += dx * k; o.z += dz * k;
-        } else {
-          // 中心卡進牆裡：往最近的邊推
-          const cx = minX + 0.5, cz = minZ + 0.5;
-          if (Math.abs(o.x - cx) > Math.abs(o.z - cz)) o.x = o.x > cx ? minX + 1 + rad : minX - rad;
-          else o.z = o.z > cz ? minZ + 1 + rad : minZ - rad;
-        }
+      if (isSolidTile(c, r)) { pushOutBox(o, rad, minX, minZ, 1); continue; }
+      const cell = cellAt(c, r);
+      if (!cell) continue;
+      for (let k = 0; k < SUB * SUB; k++) {
+        if (cell.hp[k] > 0) pushOutBox(o, rad, minX + (k % SUB) * COL, minZ + ((k / SUB) | 0) * COL, COL);
       }
     }
   }
@@ -133,18 +174,31 @@ function collide(o, rad) {
 function castRay(ox, oz, dx, dz, max) {
   const x = ox + W / 2, z = oz + H / 2;
   let cx = Math.floor(x), cz = Math.floor(z);
-  if (isWallTile(cx, cz)) return 0;
+  if (isSolidTile(cx, cz)) return 0;
   const sx = dx > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
   const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity;
   const tdz = dz !== 0 ? Math.abs(1 / dz) : Infinity;
   let tmx = dx > 0 ? (cx + 1 - x) * tdx : dx < 0 ? (x - cx) * tdx : Infinity;
   let tmz = dz > 0 ? (cz + 1 - z) * tdz : dz < 0 ? (z - cz) * tdz : Infinity;
   let t = 0;
+  let hit = rayCell(cx, cz, ox, oz, dx, dz, 0, Math.min(tmx, tmz, max));
+  if (hit !== null) return hit;
   while (t < max) {
     if (tmx < tmz) { cx += sx; t = tmx; tmx += tdx; } else { cz += sz; t = tmz; tmz += tdz; }
-    if (isWallTile(cx, cz)) return Math.min(t, max);
+    if (isSolidTile(cx, cz)) return Math.min(t, max);
+    hit = rayCell(cx, cz, ox, oz, dx, dz, t, Math.min(tmx, tmz, max));
+    if (hit !== null) return hit;
   }
   return max;
+}
+// 射線穿過可破壞的格子：一小步一小步找第一根還在的實心柱（半掩體不擋視線和雷射）
+function rayCell(c, r, ox, oz, dx, dz, t0, t1) {
+  const cell = cellAt(c, r);
+  if (!cell || !cell.full) return null;
+  for (let t = t0; t <= t1 + 1e-6; t += 0.04) {
+    if (cell.hp[colIndex(cell, ox + dx * t, oz + dz * t)] > 0) return t;
+  }
+  return null;
 }
 
 function rayCircle(ox, oz, dx, dz, cx, cz, r) {
@@ -186,7 +240,7 @@ function bfs(field, pass) {
 }
 function buildFlow() {
   bfs(flow, (c, r) => !isWallTile(c, r));
-  bfs(zflow, (c, r) => !isWallTile(c, r) || doorAt(c, r)?.open === false);
+  bfs(zflow, (c, r) => !isWallTile(c, r) || doorAt(c, r)?.open === false || cellAt(c, r)?.kind === 'door');
 }
 const fieldAt = (field, c, r) => (c >= 0 && c < W && r >= 0 && r < H) ? field[c + r * W] : -1;
 const flowAt = (x, z) => {
@@ -265,12 +319,20 @@ function shadedBox(h, sideHex, topHex) {
   return geo;
 }
 const wallGeo = shadedBox(WALL_H, 0x3a4256, 0x8a96b0);
-const breachGeo = shadedBox(WALL_H * 0.92, 0x5a3a20, 0xa47a4a);
 const gateGeo = shadedBox(WALL_H * 0.95, 0x4c5462, 0xc8a438);    // 鐵捲門：頂面黃色
-const crackGeo = shadedBox(WALL_H, 0x4a4238, 0x8a7c66);           // 有裂痕的牆：巨型殭屍撞得破
 const ventGeo = shadedBox(WALL_H, 0x2c3140, 0x15171c);            // 通風口：殭屍從這裡爬出來
 const GATE_COLORS = [0x4c5462, 0xc8a438, 0x2a2e36];
-const WALL_COLORS = [0x4a4238, 0x8a7c66, 0x3a4256];
+
+// 可破壞格子的種類：h 柱高、hp 每根柱子的血量、full 是否擋子彈和視線（半掩體只在貼著時擋）
+const CELL_KINDS = {
+  door: { h: WALL_H * 0.92, hp: 45, full: true, colors: WOOD, sound: 'doorHit' },
+  wall: { h: WALL_H, hp: 120, full: true, colors: [0x6a4a3a, 0x7a5644, 0x5c4034, 0x84604c], sound: 'wall' },
+  cover: { h: 0.62, hp: 1, full: false, colors: [0x8a7a55, 0x7c6c4a, 0x948460, 0x6e6044], sound: 'wall' },
+};
+const COL_GEO = new THREE.BoxGeometry(COL, 1, COL);
+const cellMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+const ZERO_MTX = new THREE.Matrix4().makeScale(0, 0, 0);
+const COVER_BLOCK = 0.75;   // 目標貼著半掩體時，子彈被擋下的機率
 const SWITCH_TIME = 0.9;
 const wallMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const doorMat = new THREE.MeshLambertMaterial({ color: 0x40242a, emissive: 0xff2040, emissiveIntensity: 0.35 });
@@ -351,7 +413,18 @@ function updateGates(dt) {
 
 // 殭屍推門：門擋在前面就一直敲，敲爛為止
 function bangDoor(e, dx, dz, dps, dt) {
-  const d = doorAt(tileC(e.x + dx * (e.r + 0.25)), tileR(e.z + dz * (e.r + 0.25)));
+  const c = tileC(e.x + dx * (e.r + 0.25)), r = tileR(e.z + dz * (e.r + 0.25));
+  const cell = cellAt(c, r);
+  if (cell && cell.kind === 'door') {
+    const n = nearestColumn(cell, e.x, e.z);
+    if (!n || n.d > e.r + 0.15) return;
+    cell.hp[n.k] -= dps * 2.5 * dt;
+    cell.bangT = (cell.bangT ?? 0) - dt;
+    if (cell.bangT <= 0) { cell.bangT = 0.3 + Math.random() * 0.3; sfx.doorHit(); burst(e.x + n.dx, 0.8, e.z + n.dz, WOOD, 1, 2); }
+    if (cell.hp[n.k] <= 0) destroyColumn(cell, n.k, dx, dz);
+    return;
+  }
+  const d = doorAt(c, r);
   if (!d || d.open) return;
   d.hp -= dps * dt;
   d.bangT = (d.bangT ?? 0) - dt;
@@ -367,17 +440,115 @@ function destroyDoor(d, dx, dz) {
   breachDoor(d, false, dx, dz);
 }
 
-// 有裂痕的牆被巨型殭屍撞破
-function breakWall(c, r, dx, dz) {
-  level.grid[r][c] = '.';
-  const m = level.cracks.get(c + r * W);
-  if (m) level.group.remove(m);
-  const x = toWorldX(c), z = toWorldZ(r);
-  burst(x, 0.7, z, WALL_COLORS, 16, 5, dx * 6, dz * 6);
+// 建一格可破壞的格子；門只有中間兩排柱子（順著牆的方向）
+function addCell(c, r, kind) {
+  const kd = CELL_KINDS[kind];
+  const horiz = level.grid[r][c - 1] === '#' || level.grid[r][c + 1] === '#';
+  const has = kind !== 'door' ? () => true : horiz ? (i, j) => j === 1 || j === 2 : (i, j) => i === 1 || i === 2;
+  const cell = {
+    id: level.cells.size, c, r, kind, full: kd.full, passable: false,
+    hp: new Float32Array(SUB * SUB), inst: new Int32Array(SUB * SUB).fill(-1),
+  };
+  for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) {
+    if (!has(i, j)) continue;
+    const k = i + j * SUB;
+    cell.hp[k] = kd.hp;
+    cell.inst[k] = level.cellCols.length;
+    level.cellCols.push({ cell, k, color: kd.colors[Math.floor(Math.random() * kd.colors.length)] });
+  }
+  level.cells.set(c + r * W, cell);
+}
+function buildCellMesh() {
+  const cols = level.cellCols;
+  if (!cols.length) return;
+  const mesh = new THREE.InstancedMesh(COL_GEO, cellMat, cols.length);
+  const m = new THREE.Matrix4(), col = new THREE.Color();
+  cols.forEach(({ cell, k, color }, n) => {
+    const p = colPos(cell, k), h = CELL_KINDS[cell.kind].h;
+    mesh.setMatrixAt(n, m.makeScale(1, h, 1).setPosition(p.x, h / 2, p.z));
+    mesh.setColorAt(n, col.setHex(color));
+  });
+  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  level.group.add(mesh);
+  level.cellMesh = mesh;
+}
+
+// 打出夠寬（3 根柱子）的通道才算走得過
+function updatePassable(cell) {
+  const empty = (i, j) => cell.hp[i + j * SUB] <= 0;
+  const lineI = i => [0, 1, 2, 3].every(j => empty(i, j));
+  const lineJ = j => [0, 1, 2, 3].every(i => empty(i, j));
+  let pass = false;
+  for (let a = 0; a + 2 < SUB && !pass; a++) {
+    pass = (lineI(a) && lineI(a + 1) && lineI(a + 2)) || (lineJ(a) && lineJ(a + 1) && lineJ(a + 2));
+  }
+  if (pass !== cell.passable) { cell.passable = pass; buildFlow(); }
+}
+function destroyColumn(cell, k, dx = 0, dz = 0, n = 3) {
+  if (cell.inst[k] < 0) return;
+  cell.hp[k] = 0;
+  level.cellMesh.setMatrixAt(cell.inst[k], ZERO_MTX);
+  level.cellMesh.instanceMatrix.needsUpdate = true;
+  cell.inst[k] = -1;
+  const p = colPos(cell, k), kd = CELL_KINDS[cell.kind];
+  burst(p.x, kd.h * 0.5, p.z, kd.colors, n, 2.5, dx * 3, dz * 3);
+  updatePassable(cell);
+}
+// 子彈打中柱子
+function hitColumn(cell, k, dmg, dx, dz, hx, hz) {
+  const kd = CELL_KINDS[cell.kind];
+  cell.hp[k] -= dmg;
+  sparks(hx, Math.min(GUN_Y, kd.h * 0.8), hz, 0xffd090, 3, -dx, -dz);
+  sfx[kd.sound]();
+  if (cell.hp[k] <= 0) destroyColumn(cell, k, dx, dz);
+  else burst(hx, Math.min(GUN_Y, kd.h * 0.8), hz, kd.colors, 1, 2);
+}
+// 半掩體：子彈從上面飛過去；目標正貼在後面時才有機會擋下
+// 擋下的那發會打掉彈著點的柱子；那裡已經沒柱子了，子彈就照樣飛過去
+// 每顆子彈對每格掩體只擲一次；決定擋下就停在路徑上第一根還在的柱子
+function coverStops(b, cell) {
+  if (b.coverCell !== cell.id) {
+    b.coverCell = cell.id;
+    const cx = toWorldX(cell.c), cz = toWorldZ(cell.r);
+    const targets = b.owner === 'p' ? enemies : (player.alive ? [player] : []);
+    const hug = targets.some(t => {
+      const tx = t.x - cx, tz = t.z - cz, along = tx * b.dx + tz * b.dz;
+      return along > 0 && along < 1.3 && Math.abs(tx * b.dz - tz * b.dx) < t.r + 0.4;
+    });
+    // 開槍的人自己靠著掩體往外打，不受影響
+    b.coverBlock = hug && b.traveled > 0.9 && Math.random() < COVER_BLOCK;
+  }
+  return b.coverBlock;
+}
+// 整格打爛（踹門）
+function smashCell(cell, kicked, dx = 0, dz = 0) {
+  for (let k = 0; k < SUB * SUB; k++) if (cell.hp[k] > 0) destroyColumn(cell, k, dx * 2, dz * 2, 2);
+  const x = toWorldX(cell.c), z = toWorldZ(cell.r);
+  sparks(x, 0.9, z, 0xffd090, 8);
   sfx.breach();
-  addTrauma(0.5);
-  buildFlow();
-  alertNoise(8);
+  addTrauma(kicked ? 0.6 : 0.4);
+  alertNoise(9);
+  if (kicked) {
+    slowMo = Math.max(slowMo, 1.3);
+    showToast('BREACH!', 'breach');
+    navigator.vibrate?.(40);
+  }
+}
+// 巨型殭屍撞擊：撞點附近的柱子全部打爛
+function smashArea(x, z, rad, dx, dz) {
+  let n = 0;
+  for (let r = tileR(z) - 1; r <= tileR(z) + 1; r++) for (let c = tileC(x) - 1; c <= tileC(x) + 1; c++) {
+    const cell = cellAt(c, r);
+    if (!cell) continue;
+    for (let k = 0; k < SUB * SUB; k++) {
+      if (cell.hp[k] <= 0) continue;
+      const p = colPos(cell, k);
+      if (Math.hypot(p.x - x, p.z - z) < rad) { destroyColumn(cell, k, dx * 2, dz * 2, 2); n++; }
+    }
+  }
+  if (n) { sfx.breach(); addTrauma(0.5); alertNoise(8); }
+  return n;
 }
 
 // 開關：站上去一下就切換；要離開再站上去才會再切一次
@@ -539,7 +710,7 @@ function loadLevel(mode, index) {
   level = {
     group: new THREE.Group(), grid, doorOpen: false, doorMeshes: [], exitMeshes: [],
     doors: new Map(), mode, index, dark: mode === 'dark', lamps: [], def,
-    switches: [], vents: [], cracks: new Map(), spawner: null, hostage: null, item: null,
+    switches: [], vents: [], cells: new Map(), cellCols: [], cellMesh: null, spawner: null, hostage: null, item: null,
     goal: def.goal ?? 'clear', holdT: def.hold ?? 0,
   };
   setLighting(level.dark);
@@ -565,18 +736,17 @@ function loadLevel(mode, index) {
       continue;
     }
     if (ch === '#') walls.push([x, z]);
-    else if (ch === 'W' || ch === 'V') {
-      const m = new THREE.Mesh(ch === 'W' ? crackGeo : ventGeo, wallMat);
+    else if (ch === 'V') {
+      const m = new THREE.Mesh(ventGeo, wallMat);
       m.position.set(x, WALL_H / 2, z);
       m.castShadow = m.receiveShadow = true;
       level.group.add(m);
-      if (ch === 'W') level.cracks.set(c + r * W, m);
-      else {
-        // 殭屍從相鄰的地板格冒出來
-        const [dc, dr] = DIRS4.find(([dc, dr]) => '.PZGKLlX'.includes(grid[r + dr]?.[c + dc] ?? '#')) ?? [0, 0];
-        level.vents.push({ x, z, sx: toWorldX(c + dc), sz: toWorldZ(r + dr) });
-      }
+      // 殭屍從相鄰的地板格冒出來
+      const [dc, dr] = DIRS4.find(([dc, dr]) => '.PZGKLlX'.includes(grid[r + dr]?.[c + dc] ?? '#')) ?? [0, 0];
+      level.vents.push({ x, z, sx: toWorldX(c + dc), sz: toWorldZ(r + dr) });
     }
+    else if (ch === 'W') addCell(c, r, 'wall');
+    else if (ch === 'h') addCell(c, r, 'cover');
     else if (ch === 'K') addSwitch(x, z);
     else if (ch === 'X') addItem(x, z);
     else if (ch === 'Q') addHostage(x, z);
@@ -586,19 +756,12 @@ function loadLevel(mode, index) {
       m.castShadow = m.receiveShadow = true;
       level.group.add(m);
       level.doorMeshes.push(m);
-    } else if (ch === 'B') {
-      // 門板順著牆的方向：左右是牆 → 橫門
-      const horiz = grid[r][c - 1] === '#' || grid[r][c + 1] === '#';
-      const m = new THREE.Mesh(breachGeo, wallMat);
-      m.scale.set(horiz ? 1 : 0.35, 1, horiz ? 0.35 : 1);
-      m.position.set(x, WALL_H * 0.46, z);
-      m.castShadow = m.receiveShadow = true;
-      level.group.add(m);
-      level.doors.set(c + r * W, { c, r, x, z, mesh: m, hp: 130, open: false, kind: 'breach', colors: WOOD });
-    } else if (ch === 'P') { player.x = x; player.z = z; }
+    } else if (ch === 'B') addCell(c, r, 'door');
+    else if (ch === 'P') { player.x = x; player.z = z; }
     else if ('RSHZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
     else if (ch === 'L' || ch === 'l') addLamp(x, z, ch === 'l');
   }
+  buildCellMesh();
   const inst = new THREE.InstancedMesh(wallGeo, wallMat, walls.length);
   const mtx = new THREE.Matrix4();
   walls.forEach(([x, z], i) => inst.setMatrixAt(i, mtx.makeTranslation(x, WALL_H / 2, z)));
@@ -754,24 +917,26 @@ function updateBullets(dt) {
     const b = bullets[i];
     if (!b.dying) {
       const total = b.speed * dt;
-      const steps = Math.max(1, Math.ceil(total / 0.2));
+      const steps = Math.max(1, Math.ceil(total / 0.1));   // 柱子只有 0.25 寬，步子要夠細
       const step = total / steps;
       for (let s = 0; s < steps && !b.dying; s++) {
         b.x += b.dx * step; b.z += b.dz * step; b.traveled += step;
         const c = tileC(b.x), r = tileR(b.z);
-        if (isWallTile(c, r)) {
+        if (isSolidTile(c, r)) {
           b.dying = true;
-          const door = level.grid[r]?.[c] === 'B' ? level.doors.get(c + r * W) : null;
-          if (door) {
-            // 門可以打爛
-            burst(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, WOOD, 1, 2);
-            sfx.doorHit();
-            if (b.owner === 'p' && (door.hp -= b.dmg) <= 0) breachDoor(door, false, b.dx, b.dz);
-          } else {
-            sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, b.owner === 'p' ? 0xffc060 : 0xff6050, 4, -b.dx, -b.dz);
-            if (b.owner === 'p') sfx.wall();
-          }
+          sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, b.owner === 'p' ? 0xffc060 : 0xff6050, 4, -b.dx, -b.dz);
+          if (b.owner === 'p') sfx.wall();
           break;
+        }
+        // 可破壞的格子：打到還在的柱子就扣它的血（半掩體看有沒有人貼在後面）
+        const cell = cellAt(c, r);
+        if (cell) {
+          const k = colIndex(cell, b.x, b.z);
+          if (cell.hp[k] > 0 && (cell.full || coverStops(b, cell))) {
+            b.dying = true;
+            hitColumn(cell, k, b.dmg, b.dx, b.dz, b.x - b.dx * 0.05, b.z - b.dz * 0.05);
+            break;
+          }
         }
         if (b.owner === 'p') {
           for (const e of enemies) {
@@ -987,18 +1152,15 @@ function updatePlayer(dt) {
   const ml = Math.hypot(input.move.x, input.move.y);
   let kicking = null;
   if (ml > 0.5) {
-    for (const d of level.doors.values()) {
-      if (d.open || d.kind === 'gate') continue;
-      const minX = d.c - W / 2, minZ = d.r - H / 2;
-      const dx = Math.max(minX, Math.min(p.x, minX + 1)) - p.x;
-      const dz = Math.max(minZ, Math.min(p.z, minZ + 1)) - p.z;
-      const dd = Math.hypot(dx, dz);
-      if (dd < p.r + 0.08 && dd > 1e-4 && (dx * input.move.x + dz * input.move.y) / (dd * ml) > 0.5) { kicking = d; break; }
+    for (const cell of level.cells.values()) {
+      if (cell.kind !== 'door' || cell.passable) continue;
+      const n = nearestColumn(cell, p.x, p.z);
+      if (n && n.d < p.r + 0.08 && n.d > 1e-4 && (n.dx * input.move.x + n.dz * input.move.y) / (n.d * ml) > 0.5) { kicking = cell; break; }
     }
   }
   if (kicking) {
     p.kick += dt;
-    if (p.kick >= 0.15) { breachDoor(kicking, true, input.move.x / ml, input.move.y / ml); p.kick = 0; }
+    if (p.kick >= 0.15) { smashCell(kicking, true, input.move.x / ml, input.move.y / ml); p.kick = 0; }
   } else p.kick = 0;
 
   // 目標方向（游標 / 右搖桿）
@@ -1515,13 +1677,11 @@ function updateEnemies(dt) {
     collide(e, e.r);
     // 巨型殭屍衝撞時撞到牆：暈一下（衝撞第一幀速度還沒起來，不算）
     if (e.type === 'G' && e.state === 'dash' && e.t < 0.38 && Math.hypot(e.x - bx, e.z - bz) < 10.5 * dt * 0.35) {
-      // 撞到裂牆或門就撞破，暈得比較短
-      const hc = tileC(e.x + e.lx * (e.r + 0.3)), hr = tileR(e.z + e.lz * (e.r + 0.3));
-      const door = doorAt(hc, hr);
-      let broke = true;
-      if (level.grid[hr]?.[hc] === 'W') breakWall(hc, hr, e.lx, e.lz);
-      else if (door && !door.open) destroyDoor(door, e.lx, e.lz);
-      else broke = false;
+      // 撞到可破壞的東西或鐵捲門就撞破，暈得比較短
+      const ix = e.x + e.lx * (e.r + 0.4), iz = e.z + e.lz * (e.r + 0.4);
+      const door = doorAt(tileC(e.x + e.lx * (e.r + 0.15)), tileR(e.z + e.lz * (e.r + 0.15)));
+      let broke = smashArea(ix, iz, 0.8, e.lx, e.lz) > 0;
+      if (door && !door.open) { destroyDoor(door, e.lx, e.lz); broke = true; }
       e.state = 'recover'; e.t = broke ? 0.6 : 1.4; e.vx = -e.lx * 2; e.vz = -e.lz * 2;
       sfx.thud(); addTrauma(0.35);
       burst(e.x + e.lx * e.r, 1, e.z + e.lz * e.r, [0x3a4256, 0x8a96b0], 6, 3);
@@ -1718,7 +1878,9 @@ R 換彈・Q 或滾輪切換武器・Esc 暫停<br><br>
 <b>關卡機關</b><br>
 站在開關上一下：切換鐵捲門或燈<br>
 殭屍會一直敲門，敲爛的鐵捲門就關不起來了<br>
-有裂痕的牆擋不住巨型殭屍的衝撞<br>
+磚牆、木門、沙包都打得爛，打穿的洞子彈和視線都過得去<br>
+沙包（矮的）擋路不擋子彈；貼著沙包時，對面打來的子彈大多會被擋下並打掉一塊<br>
+巨型殭屍一撞就能撞出大洞<br>
 吊燈打得掉，打掉那一區就暗了
 </div>`;
 
