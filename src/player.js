@@ -75,8 +75,8 @@ export function startSwap() {
 
 // fwd = 槍口離身體中心往前多遠；hand = 1 右手、-1 左手
 export const muzzleOf = (x, z, fx, fz, s = 1, fwd = 0.67, hand = 1) => ({
-  x: x + (fz * 0.2 * hand + fx * fwd) * s,
-  z: z + (-fx * 0.2 * hand + fz * fwd) * s,
+  x: x + (-fz * 0.2 * hand + fx * fwd) * s,
+  z: z + (fx * 0.2 * hand + fz * fwd) * s,
 });
 export const playerMuzzle = () => muzzleOf(player.x, player.z, player.fx, player.fz, 1, 0.22 + curSlot().muzzleZ, player.man.hand);
 
