@@ -8,7 +8,7 @@
 //   衝撞：發紅蓄力後直線衝過來，撞牆會暈
 //   召喚：血量掉到 2/3、1/3 時，叫兩個小兵從地板組裝出來
 // 血量剩一半以下暴怒：招式間隔變短、彈丸變多
-// 登場：組裝比一般敵人久，畫面下方的血條跟著一格一格組起來；受傷時掉的那幾格會碎掉噴開
+// 登場：組裝比一般敵人久，畫面上方的血條跟著一格一格組起來；受傷時掉的那幾格會碎掉噴開
 import { sfx } from './audio.js';
 import { G, GUN_Y, addTrauma } from './core.js';
 import { burst, muzzleFlash, setLaser, sparks } from './fx.js';
@@ -213,7 +213,7 @@ export function bossKilled(e) {
   setTimeout(() => { for (const o of enemies.slice()) if (o !== e) killEnemy(o, 0, 0); }, 350);
 }
 
-// ---------- 頭目血條（畫面下方，一格一格的方塊） ----------
+// ---------- 頭目血條（畫面上方，一格一格的方塊） ----------
 const SEGS = 30;
 const barEl = document.getElementById('bossBar');
 const segBox = barEl?.querySelector('.bb-segs');
@@ -231,6 +231,7 @@ export function bossBarStart(name) {
   });
   shown = 0; lastF = 1;
   barEl.classList.remove('hidden', 'ready');
+  document.body.classList.add('boss-on');
 }
 // 登場時：從左到右一格一格組起來
 export function bossBarFill(k) {
@@ -241,8 +242,8 @@ function bossBarReady() {
   while (shown < SEGS) segs[shown++]?.classList.add('on');
   barEl?.classList.add('ready');
 }
-export function bossBarHide() { barEl?.classList.add('hidden'); }
-export function hideBossBarNow() { barEl?.classList.add('hidden'); segs = []; }
+export function bossBarHide() { barEl?.classList.add('hidden'); document.body.classList.remove('boss-on'); }
+export function hideBossBarNow() { bossBarHide(); segs = []; }
 
 // 受傷：掉光的格子碎掉噴開；最後一格依剩餘比例縮短，打到時噴一點碎屑
 export function bossBarSet(f) {

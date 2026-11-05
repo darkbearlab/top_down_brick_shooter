@@ -96,13 +96,14 @@ html, body {
 #rollBtn { --cd: 0; background-image: linear-gradient(to top, rgba(90,220,255,.35) calc((1 - var(--cd)) * 100%), transparent 0); opacity: calc(1 - var(--cd) * 0.55); }
 @media (pointer: coarse) { #rollBtn { display: block; } }
 
-/* 頭目血條：畫面下方一排方塊，登場時從左到右組起來，掉血的格子碎掉噴開 */
+/* 頭目血條：畫面最上方一排方塊，登場時從左到右組起來，掉血的格子碎掉噴開；出現時 HUD 往下讓位 */
 #bossBar {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 16px);
-  width: min(78vw, 560px); z-index: 6; pointer-events: none; text-align: center;
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 8px);
+  width: min(calc(100vw - 32px), 560px); z-index: 6; pointer-events: none; text-align: center;
 }
+body.boss-on #hud { padding-top: calc(env(safe-area-inset-top) + 50px); }
 #bossBar.hidden { display: none; }
-#bossBar .bb-name { font-weight: 900; font-size: 13px; letter-spacing: 4px; color: #ff8a90; text-shadow: 0 1px 4px rgba(0,0,0,.8); margin-bottom: 4px; }
+#bossBar .bb-name { font-weight: 900; font-size: 12px; letter-spacing: 4px; color: #ff8a90; text-shadow: 0 1px 4px rgba(0,0,0,.8); margin-bottom: 3px; line-height: 1; }
 #bossBar .bb-segs { display: flex; gap: 2px; padding: 3px; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.15); border-radius: 3px; }
 #bossBar .bb-seg { flex: 1; height: 12px; position: relative; --f: 1; opacity: 0; }
 #bossBar .bb-seg i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--f) * 100%); background: linear-gradient(#ff6a70, #c81e2a); box-shadow: inset 0 -2px 0 rgba(0,0,0,.25); }
