@@ -328,7 +328,7 @@ export function updateEnemies(dt) {
           wx = d.x * ds; wz = d.z * ds;
           if (los) { faceX = nx; faceZ = nz; } else { faceX = d.x; faceZ = d.z; }
           if (e.t <= 0) {
-            if (los && dist < 12) startAttack(e, nx, nz);
+            if (los && dist < 13) startAttack(e, nx, nz);
             else e.t = 0.3;
           }
           break;

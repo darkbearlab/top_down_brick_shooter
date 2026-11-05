@@ -108,7 +108,7 @@ export function bulletHitsSwing(b) {
     d.w -= side * 1.2 / Math.max(q.t, 0.3);
     d.hp -= b.owner === 'p' ? b.dmg : 20;
     burst(b.x, 0.9, b.z, WOOD, 2, 2, -b.dx, -b.dz);
-    sparks(b.x - b.dx * 0.05, 0.9, b.z - b.dz * 0.05, 0xffd090, 3, -b.dx, -b.dz);
+    if (!b.pellet) sparks(b.x - b.dx * 0.05, 0.9, b.z - b.dz * 0.05, 0xffd090, 3, -b.dx, -b.dz);
     if (b.owner === 'p') sfx.doorHit();
     if (d.hp <= 0) breakSwing(d, b.dx, b.dz);
     return true;

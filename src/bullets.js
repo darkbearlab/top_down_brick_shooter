@@ -19,7 +19,7 @@ export function spawnPellet(style, x, z, dx, dz, speed, { range = 20, home = 0, 
   const core = new THREE.Mesh(PELLET_GEO, st.core);
   rim.scale.setScalar(st.r);
   core.scale.setScalar(st.r * 0.62);
-  core.position.y = st.r * 0.45;   // 鏡頭從斜上方看：亮的芯放上面一點
+  core.position.y = st.r * 0.42;   // 鏡頭從斜上方看：亮的芯放上面一點
   g.add(rim, core);
   g.position.set(x, GUN_Y, z);
   scene.add(g);
@@ -58,7 +58,7 @@ export function updateBullets(dt) {
         const c = tileC(b.x), r = tileR(b.z);
         if (isSolidTile(c, r)) {
           b.dying = true;
-          sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, b.owner === 'p' ? 0xffc060 : 0xff6050, 4, -b.dx, -b.dz);
+          if (!b.pellet) sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, 0xffc060, 4, -b.dx, -b.dz);
           if (b.owner === 'p') sfx.wall();
           break;
         }
@@ -70,7 +70,7 @@ export function updateBullets(dt) {
           const stop = cell.full || (b.pellet ? b.traveled > 0.9 : coverStops(b, cell));
           if (cell.hp[k] > 0 && stop) {
             b.dying = true;
-            hitColumn(cell, k, b.dmg, b.dx, b.dz, b.x - b.dx * 0.05, b.z - b.dz * 0.05);
+            hitColumn(cell, k, b.dmg, b.dx, b.dz, b.x - b.dx * 0.05, b.z - b.dz * 0.05, b.pellet);
             break;
           }
         }
@@ -98,14 +98,17 @@ export function updateBullets(dt) {
       }
       if (b.traveled > b.range) b.dying = true;
       if (b.pellet) {
-        if (b.dying) {
-          sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, b.style === 'heavy' ? 0xb050ff : 0xff6050, 3, -b.dx, -b.dz);
-          scene.remove(b.g); bullets.splice(i, 1); continue;
-        }
         b.g.position.set(b.x, GUN_Y, b.z);
+        b.g.rotation.y += dt * 5;   // 方塊慢慢自轉
         continue;
       }
       b.len = Math.min(b.traveled, b.maxLen);
+    } else if (b.pellet) {
+      // 彈丸打到東西：原地縮掉就好，不噴火花（看起來才不會像反彈）
+      b.pop = (b.pop ?? 0.09) - dt;
+      if (b.pop <= 0) { scene.remove(b.g); bullets.splice(i, 1); continue; }
+      b.g.scale.setScalar(b.pop / 0.09);
+      continue;
     } else {
       // 彈頭停住，尾巴繼續往前收：曳光拖尾
       b.len -= b.speed * dt;

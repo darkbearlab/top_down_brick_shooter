@@ -494,10 +494,11 @@ export function destroyColumn(cell, k, dx = 0, dz = 0, n = 3) {
   updatePassable(cell);
 }
 // 子彈打中柱子
-export function hitColumn(cell, k, dmg, dx, dz, hx, hz) {
+// quiet = 不噴火花（敵人的彈丸）
+export function hitColumn(cell, k, dmg, dx, dz, hx, hz, quiet = false) {
   const kd = CELL_KINDS[cell.kind];
   cell.hp[k] -= dmg;
-  sparks(hx, Math.min(GUN_Y, kd.h * 0.8), hz, 0xffd090, 3, -dx, -dz);
+  if (!quiet) sparks(hx, Math.min(GUN_Y, kd.h * 0.8), hz, 0xffd090, 3, -dx, -dz);
   sfx[kd.sound]();
   if (cell.hp[k] <= 0) destroyColumn(cell, k, dx, dz);
   else burst(hx, Math.min(GUN_Y, kd.h * 0.8), hz, kd.colors, 1, 2);

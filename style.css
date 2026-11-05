@@ -77,7 +77,8 @@ html, body {
 /* 翻滾鈕：只有觸控裝置顯示 */
 #rollBtn {
   display: none; position: fixed; z-index: 7; pointer-events: auto;
-  right: calc(18px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom));
+  /* 放在右手拇指上方：拇指平常在右下角推瞄準搖桿，往上伸一點就按得到 */
+  right: calc(22px + env(safe-area-inset-right)); bottom: calc(max(170px, 26vh) + env(safe-area-inset-bottom));
   width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35);
   background: rgba(0,0,0,.35); color: #e8ecf2; font: inherit; font-size: 18px; font-weight: 900;
   touch-action: none; user-select: none; -webkit-user-select: none;

@@ -345,7 +345,9 @@ export function frame(t) {
   // 攝影機：跟玩家、往瞄準方向前探、直式時讓角色偏下方；選單時慢慢飄
   const portrait = innerHeight > innerWidth;
   let lx, lz;
-  let dist = camDist;
+  // 關卡可以設 zoom：彈幕關卡拉遠一點，看得到更多彈丸
+  const zoom = G.state === 'menu' ? 1 : level?.def?.zoom ?? 1;
+  let dist = camDist * zoom;
   if (G.state === 'menu') {
     lx = Math.sin(G.now * 0.15) * 2;
     lz = Math.sin(G.now * 0.1) * (H / 2 - 4);
@@ -357,7 +359,7 @@ export function frame(t) {
   } else {
     const aimingNow = player.alive && player.laser.g.visible;
     lx = player.x + (aimingNow ? player.fx * 1.8 : 0);
-    lz = player.z + (aimingNow ? player.fz * 1.8 : 0) - (portrait ? 1.6 : 0.5);
+    lz = player.z + (aimingNow ? player.fz * 1.8 : 0) - (portrait ? 1.6 : 0.5) * zoom;
   }
   const ck = G.state === 'preview' ? 1 : 1 - Math.exp(-(G.state === 'menu' ? 1 : 6) * raw);
   camTarget.x += (lx - camTarget.x) * ck;
@@ -367,6 +369,11 @@ export function frame(t) {
   const ox = (Math.random() - 0.5) * sh, oz = (Math.random() - 0.5) * sh;
   camera.position.set(camTarget.x + ox, Math.sin(CAM_PITCH) * dist, camTarget.z + Math.cos(CAM_PITCH) * dist + oz);
   camera.lookAt(camTarget.x + ox, 0, camTarget.z + oz);
+  // 陰影範圍跟著拉遠的鏡頭放大
+  if (sun.shadow.camera.right !== 14 * zoom) {
+    Object.assign(sun.shadow.camera, { left: -14 * zoom, right: 14 * zoom, top: 14 * zoom, bottom: -14 * zoom });
+    sun.shadow.camera.updateProjectionMatrix();
+  }
   sun.position.set(camTarget.x - 6, 16, camTarget.z + 4);
   sun.target.position.set(camTarget.x, 0, camTarget.z);
 

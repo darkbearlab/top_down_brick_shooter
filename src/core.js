@@ -71,8 +71,8 @@ export const TRACER = {
   enemy: { core: addMat(0xffe0e0), glow: addMat(0xff2a2a, 0.6), maxLen: 1.1 },
   heavy: { core: addMat(0xf0e0ff), glow: addMat(0xb050ff, 0.6), maxLen: 0.9 },
 };
-// 敵人的彈丸：慢、圓、看得清楚；外圈深色描邊在亮的地板上也讀得到
-export const PELLET_GEO = new THREE.SphereGeometry(1, 12, 8);
+// 敵人的彈丸：慢速方塊，亮芯 + 深色外殼，在亮的地板上也讀得到（scale = 半邊長）
+export const PELLET_GEO = new THREE.BoxGeometry(2, 2, 2);
 const solid = c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false });
 export const PELLET = {
   enemy: { r: 0.13, core: solid(0xffd0b0), rim: solid(0xc81e14) },
