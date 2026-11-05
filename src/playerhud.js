@@ -9,7 +9,7 @@ import { curSlot, player } from './player.js';
 const flat = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: false, toneMapped: false });
 
 // ---- 頭上的生命：菱形 ----
-const PIP = 0.22, PIP_STEP = 0.4;   // 方塊邊長、相鄰兩顆中心距離
+const PIP = 0.17, PIP_STEP = 0.31;   // 方塊邊長、相鄰兩顆中心距離
 const PIP_GEO = new THREE.PlaneGeometry(PIP, PIP);
 const M = { hp: flat(0xff4a5a), lost: flat(0xffffff, 0.2), armor: flat(0xb8c6dc), flash: flat(0xffffff) };
 const head = new THREE.Group();
@@ -90,7 +90,7 @@ export function updatePlayerHud(dt) {
       m.scale.setScalar(1 + Math.max(0, hitFlash) * 1.2);
     }
   }
-  head.position.set(p.x, 2.6, p.z);
+  head.position.set(p.x, 2.75, p.z);
   // 彈數
   const reloadK = s.reloadT > 0 ? 1 - s.reloadT / s.stats.reload : null;
   const ak = `${p.cur}|${s.ammo}|${s.stats.mag}|${reloadK == null ? '-' : Math.floor(reloadK * 48)}`;
