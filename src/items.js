@@ -1,6 +1,6 @@
 // ---------- 道具 ----------
 // 兩種來源：
-// - 地圖重生型：關卡 def.items 排好時間，到點就出現在離玩家 4～12 格的空地；計時型被撿走後會在原地再出現 respawn 次
+// - 地圖重生型：關卡 def.items 排好時間；開場就在地上標出位置，到點從地板冒出方塊組裝成道具，閃一下才撿得到；計時型被撿走後會在原地再組裝 respawn 次
 // - 敵人掉落型：def.drops = 掉落機率；掉在地上 DROP_LIFE 秒沒撿就消失（最後幾秒閃爍）
 // 效果：
 // - 急救包、護甲：撿了就是你的，帶到下一關（不會重生）
@@ -56,18 +56,103 @@ export function spawnItem(kind, x, z, opts = {}) {
   const m = makeMesh(kind);
   m.g.position.set(x, 0, z);
   level.group.add(m.g);
-  const it = { kind, x, z, ...m, life: opts.life ?? Infinity, respawn: opts.respawn ?? 0, every: opts.every ?? 20, t: 0 };
+  const it = { kind, x, z, ...m, life: opts.life ?? Infinity, slot: opts.slot ?? null, t: 0 };
   level.items.push(it);
-  sparks(x, 0.5, z, ITEM_KINDS[kind].color, 8);
+  if (!opts.quiet) sparks(x, 0.5, z, ITEM_KINDS[kind].color, 8);
   return it;
 }
 
-// 關卡開始：排好地圖道具的出現時間
+// ---------- 地圖重生型：開場就在地上標出位置 ----------
+// 每個 slot 一塊地標（同色淡圈 + 四個角括號），到時間就從地板冒出方塊組裝成道具，閃一下才撿得到
+// 計時型被撿走後地標留著，過 every 秒在原地再組裝一次（respawn 次）；用完地標才消失
+const ASSEMBLE = 1.0;
+const PAD_RING = new THREE.RingGeometry(0.44, 0.5, 32);
+const CORNER = new THREE.PlaneGeometry(0.2, 0.05);
+const CUBE = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+function makePad(kind, x, z) {
+  const color = ITEM_KINDS[kind].color;
+  const g = new THREE.Group();
+  const mat = addMat(color, 0.3);
+  const ring = new THREE.Mesh(PAD_RING, mat);
+  ring.rotation.x = -Math.PI / 2;
+  g.add(ring);
+  // 四個 L 形角括號，圍成一個方框
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const ax = new THREE.Mesh(CORNER, mat), az = new THREE.Mesh(CORNER, mat);
+    ax.rotation.x = az.rotation.x = -Math.PI / 2;
+    az.rotation.z = Math.PI / 2;
+    ax.position.set(sx * 0.31, 0, sz * 0.4);
+    az.position.set(sx * 0.4, 0, sz * 0.31);
+    g.add(ax, az);
+  }
+  g.position.set(x, 0.025, z);
+  level.group.add(g);
+  return { g, mat };
+}
+
 export function initItems(def) {
   level.items = [];
-  level.itemQueue = (def.items ?? []).map(s => ({ ...s })).sort((a, b) => a.at - b.at);
   level.itemClock = 0;
-  level.respawns = [];
+  level.slots = [];
+  // 位置開場就決定：離玩家起點 4～12 格、彼此至少隔 3 格
+  for (const s of def.items ?? []) {
+    let spot = null;
+    for (let k = 0; k < 30; k++) {
+      const c = randomFloorSpot(4, 12);
+      if (c && level.slots.every(o => Math.hypot(o.x - c.x, o.z - c.z) >= 3)) { spot = c; break; }
+    }
+    if (!spot) continue;
+    level.slots.push({
+      kind: s.kind, x: spot.x, z: spot.z, at: s.at, state: 'wait',
+      respawn: s.respawn ?? (ITEM_KINDS[s.kind].timed ? 1 : 0), every: s.every ?? 20,
+      pad: makePad(s.kind, spot.x, spot.z), cubes: null, item: null, t: 0,
+    });
+  }
+}
+
+function startBuild(sl) {
+  sl.state = 'build'; sl.t = 0;
+  const it = spawnItem(sl.kind, sl.x, sl.z, { slot: sl, quiet: true });
+  it.building = true;
+  it.g.visible = false;
+  sl.item = it;
+  const color = ITEM_KINDS[sl.kind].color;
+  sl.cubes = Array.from({ length: 18 }, (_, i) => {
+    const mesh = new THREE.Mesh(CUBE, i % 3 ? matOf(color) : WHITE_CUBE);
+    const a = Math.random() * Math.PI * 2, r = 0.35 + Math.random() * 0.5;
+    const from = [sl.x + Math.cos(a) * r, 0.03, sl.z + Math.sin(a) * r];
+    const to = [sl.x + (Math.random() - 0.5) * 0.3, 0.3 + Math.random() * 0.3, sl.z + (Math.random() - 0.5) * 0.3];
+    mesh.position.set(...from);
+    mesh.visible = false;
+    level.group.add(mesh);
+    return { mesh, from, to, arrive: 0.35 + Math.random() * 0.55 };
+  });
+  sfx.assemble?.();
+}
+const WHITE_CUBE = new THREE.MeshBasicMaterial({ color: 0xffffff });
+function updateBuild(sl, dt) {
+  sl.t += dt;
+  const k = Math.min(1, sl.t / ASSEMBLE);
+  for (const c of sl.cubes) {
+    const u = Math.max(0, Math.min(1, (k - (c.arrive - 0.35)) / 0.35));
+    c.mesh.visible = u > 0 && u < 1;
+    const e = 1 - (1 - u) ** 3;
+    c.mesh.position.set(c.from[0] + (c.to[0] - c.from[0]) * e, c.from[1] + (c.to[1] - c.from[1]) * e + Math.sin(u * Math.PI) * 0.2, c.from[2] + (c.to[2] - c.from[2]) * e);
+    c.mesh.rotation.set(u * 7, u * 5, 0);
+  }
+  sl.pad.mat.opacity = 0.4 + 0.4 * Math.abs(Math.sin(sl.t * 14));
+  if (k < 1) return;
+  // 組好了：閃一下，現在才撿得到
+  for (const c of sl.cubes) level.group.remove(c.mesh);
+  sl.cubes = null;
+  sl.state = 'ready';
+  const it = sl.item;
+  it.building = false;
+  it.g.visible = true;
+  it.flash = 0.15;
+  sparks(sl.x, 0.5, sl.z, ITEM_KINDS[sl.kind].color, 12);
+  sparks(sl.x, 0.5, sl.z, 0xffffff, 6);
+  sfx.assembleDone?.();
 }
 
 export function maybeDrop(e) {
@@ -86,31 +171,35 @@ function pickUp(it) {
   sfx.pickup?.();
   showToast(k.name, 'item');
   level.group.remove(it.g);
-  // 計時型的地圖道具：過一陣子在原地再出現（次數有限）
-  if (it.respawn > 0) level.respawns.push({ kind: it.kind, x: it.x, z: it.z, at: level.itemClock + it.every, respawn: it.respawn - 1, every: it.every });
+  // 地圖道具：還有重生次數就等下一次，用完就拿掉地標
+  const sl = it.slot;
+  if (!sl) return;
+  sl.item = null;
+  if (sl.respawn > 0) { sl.respawn--; sl.state = 'wait'; sl.at = level.itemClock + sl.every; }
+  else { sl.state = 'done'; level.group.remove(sl.pad.g); }
 }
 
 export function updateItems(dt) {
   if (!level?.items || G.state !== 'play') return;
   level.itemClock += dt;
   const T = level.itemClock;
-  while (level.itemQueue.length && level.itemQueue[0].at <= T) {
-    const s = level.itemQueue.shift();
-    const spot = randomFloorSpot(4, 12);
-    if (spot) spawnItem(s.kind, spot.x, spot.z, { respawn: s.respawn ?? (ITEM_KINDS[s.kind].timed ? 1 : 0), every: s.every ?? 20 });
-  }
-  for (let i = level.respawns.length - 1; i >= 0; i--) {
-    const r = level.respawns[i];
-    if (r.at > T) continue;
-    level.respawns.splice(i, 1);
-    spawnItem(r.kind, r.x, r.z, { respawn: r.respawn, every: r.every });
+  for (const sl of level.slots) {
+    if (sl.state === 'wait') {
+      // 快出現時地標閃得越來越快
+      const left = sl.at - T;
+      sl.pad.mat.opacity = left < 3 ? 0.3 + 0.35 * Math.abs(Math.sin(T * (6 + (3 - left) * 4))) : 0.22 + 0.08 * Math.sin(T * 2);
+      if (left <= 0) startBuild(sl);
+    } else if (sl.state === 'build') updateBuild(sl, dt);
+    else if (sl.state === 'ready') sl.pad.mat.opacity = 0.3;
   }
   for (let i = level.items.length - 1; i >= 0; i--) {
     const it = level.items[i];
+    if (it.building) continue;
     it.t += dt;
     it.spin.position.y = 0.42 + Math.sin(it.t * 3) * 0.07;
     it.spin.rotation.y += dt * 1.8;
     it.ring.material.opacity = 0.35 + 0.3 * Math.abs(Math.sin(it.t * 4));
+    if (it.flash > 0) { it.flash -= dt; it.spin.scale.setScalar(1 + it.flash * 3); } else it.spin.scale.setScalar(1);
     it.life -= dt;
     if (it.life < 3) it.g.visible = it.life > 0 && Math.floor(it.life * 8) % 2 === 0;
     if (it.life <= 0) { level.group.remove(it.g); level.items.splice(i, 1); continue; }
