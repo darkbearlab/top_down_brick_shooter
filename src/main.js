@@ -357,9 +357,9 @@ export function frame(t) {
     lx = 0; lz = 0.6;
     dist = Math.max((W / 2 + 0.8) / (t * camera.aspect), (H / 2 + 0.8) * Math.sin(CAM_PITCH) / t);
   } else {
-    const aimingNow = player.alive && player.laser.g.visible;
-    lx = player.x + (aimingNow ? player.fx * 1.8 : 0);
-    lz = player.z + (aimingNow ? player.fz * 1.8 : 0) - (portrait ? 1.6 : 0.5) * zoom;
+    const look = player.alive ? 1 : 0;
+    lx = player.x + player.lookX * look;
+    lz = player.z + player.lookZ * look - (portrait ? 1.6 : 0.5) * zoom;
   }
   const ck = G.state === 'preview' ? 1 : 1 - Math.exp(-(G.state === 'menu' ? 1 : 6) * raw);
   camTarget.x += (lx - camTarget.x) * ck;

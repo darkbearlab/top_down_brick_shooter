@@ -77,7 +77,8 @@ const solid = c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false });
 export const PELLET = {
   enemy: { r: 0.13, core: solid(0xffd0b0), rim: solid(0xc81e14) },
   heavy: { r: 0.17, core: solid(0xf0d8ff), rim: solid(0x7a28d0) },
-  homing: { r: 0.15, core: solid(0xfff0a0), rim: solid(0xd07a10) },
+  spread: { r: 0.13, core: solid(0xc8fff4), rim: solid(0x0e8a7c) },
+  ring: { r: 0.15, core: solid(0xfff4b0), rim: solid(0xb8900a) },
 };
 export const debrisMats = new Map();
 export const debrisMat = c => {

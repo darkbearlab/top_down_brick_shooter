@@ -32,7 +32,10 @@ const PALETTE = [
   { group: '敵人', items: [
     { ch: 'R', name: '衝鋒兵', bg: '#d8433b', glyph: 'R' },
     { ch: 'S', name: '射手', bg: '#e0892a', glyph: 'S' },
+    { ch: 'F', name: '散射兵', bg: '#1fa89a', glyph: 'F' },
     { ch: 'H', name: '重砲手', bg: '#7b4fcf', glyph: 'H' },
+    { ch: 'C', name: '環砲手', bg: '#d8b52a', glyph: 'C', fg: '#333' },
+    { ch: 'A', name: '狙擊手', bg: '#4e8a3a', glyph: 'A' },
     { ch: 'Z', name: '殭屍', bg: '#5f7a52', glyph: 'Z' },
     { ch: 'G', name: '巨型殭屍', bg: '#6a6858', glyph: 'G' },
   ] },
@@ -109,7 +112,7 @@ function toDef(d) {
   const count = ch => all.split(ch).length - 1;
   if (count('P') !== 1) errors.push('要放剛好一個玩家');
   if (!count('D')) warns.push('沒有出口：達成目標也走不出去');
-  const enemies = [...'RSHZG'].reduce((n, ch) => n + count(ch), 0);
+  const enemies = [...'RSFHCAZG'].reduce((n, ch) => n + count(ch), 0);
   if (d.goal === 'clear' && !enemies) warns.push('目標是清光敵人，但地圖上沒有敵人（一進場就過關）');
   if (d.goal === 'activate' && !count('K')) errors.push('目標是打開開關，但沒有開關');
   if (d.goal === 'extract' && !count('X')) errors.push('目標是撤離，但沒有物資');

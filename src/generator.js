@@ -176,7 +176,7 @@ export function generateLevel(opts) {
   const reachKeys = () => {
     // 要走得到的東西：所有門、目標、敵人
     const keys = [];
-    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if ('Bd'.includes(g[r][c]) || 'KXQRSHZG'.includes(g[r][c])) keys.push(c + r * W);
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if ('Bd'.includes(g[r][c]) || 'KXQRSFHCAZG'.includes(g[r][c])) keys.push(c + r * W);
     return keys;
   };
   const allReachable = () => {
@@ -274,7 +274,7 @@ export function generateLevel(opts) {
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (g[r][c] !== '#') floor++;
   const per = (GEN_DENSITY[opts.enemies] ?? GEN_DENSITY.normal).per;
   let count = Math.max(2, Math.round(floor / per * (dark ? 1.5 : 1) * (goal === 'hold' ? 0.5 : 1)));
-  const types = dark ? [['Z', 0.85], ['G', 0.15]] : [['R', 0.33], ['S', 0.47], ['H', 0.2]];
+  const types = dark ? [['Z', 0.85], ['G', 0.15]] : [['R', 0.28], ['S', 0.36], ['F', 0.12], ['H', 0.1], ['C', 0.06], ['A', 0.08]];
   const pickType = () => { let v = rnd(); for (const [t, w] of types) { if ((v -= w) < 0) return t; } return types[0][0]; };
   const spawnRooms = rooms.filter(rm => rm !== start);
   const weight = rm => freeCellsOf(rm).filter(([c, r]) => D[c + r * W] > 7).length;
@@ -286,7 +286,7 @@ export function generateLevel(opts) {
     let v = rnd() * tot, rm = spawnRooms[0];
     for (let i = 0; i < spawnRooms.length; i++) { if ((v -= ws[i]) < 0) { rm = spawnRooms[i]; break; } }
     const crowded = ([c, r]) => {
-      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if ('RSHZG'.includes(at(c + dc, r + dr))) return true;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if ('RSFHCAZG'.includes(at(c + dc, r + dr))) return true;
       return false;
     };
     if (placeIn(rm, pickType(), 12, ([c, r]) => D[c + r * W] > 7 && !crowded([c, r]))) count--;

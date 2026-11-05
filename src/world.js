@@ -833,7 +833,7 @@ export function loadLevel(mode, index) {
     } else if (ch === 'B') addCell(c, r, 'door');
     else if (ch === 'd') addSwingDoor(c, r);
     else if (ch === 'P') { player.x = x; player.z = z; }
-    else if ('RSHZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
+    else if ('RSFHCAZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
     else if (ch === 'L' || ch === 'l') addLamp(x, z, ch === 'l');
   }
   buildCellMesh();

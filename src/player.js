@@ -4,7 +4,7 @@ import { loadPlayerLook } from './character.js';
 import { makeBlockMan, animateMan, setFlash, setHand } from './models.js';
 import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
-import { DEG, G, GUN_Y, MAX_HITS, addTrauma, camera, input, scene } from './core.js';
+import { DEG, G, GUN_Y, MAX_HITS, addTrauma, camTarget, camera, input, scene } from './core.js';
 import { burst, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, sparks, voxelBurst } from './fx.js';
 import { castRay, collide, hostageReady, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
 import { spawnBullet } from './bullets.js';
@@ -17,6 +17,7 @@ export const player = {
   x: 0, z: 0, vx: 0, vz: 0, r: 0.33, fx: 0, fz: -1,
   aimA: Math.PI, recoil: 0, kickSign: 1,   // aimA = 實際槍口角度；recoil = 後座力造成的偏移
   hits: 0, inv: 0, fireCd: 0, alive: true, kick: 0,
+  lookX: 0, lookZ: 0,
   roll: 0, rollI: 0, rollCd: 0, rdx: 0, rdz: 1,   // 翻滾：剩餘時間、無敵時間、冷卻、方向
   slots: [], cur: 0, swapT: 0, swapDur: 1, swapped: true,
   laser: makeLaser(0x40d8ff), guide: makeLaser(0xffffff), bar: makeBar(0x5adcff),
@@ -104,6 +105,7 @@ export const tmpV = new THREE.Vector3(), ndc = new THREE.Vector2();
 
 // ---------- 翻滾閃避 ----------
 // 往移動方向（沒在動就往面對的方向）滾一段；前段無敵，彈丸會直接穿過去；翻滾中不能開槍
+export const LOOK_AHEAD = 2.6;   // 鏡頭往瞄準方向最多偏幾格（乘上關卡 zoom）
 export const ROLL_TIME = 0.42, ROLL_IFRAME = 0.3, ROLL_CD = 0.22, ROLL_SPEED = 9.5;
 function startRoll() {
   const p = player, ml = Math.hypot(input.move.x, input.move.y);
@@ -162,6 +164,24 @@ export function updatePlayer(dt) {
     p.kick += dt;
     if (p.kick >= 0.15) { smashCell(kicking, true, input.move.x / ml, input.move.y / ml); p.kick = 0; }
   } else p.kick = 0;
+
+  // 鏡頭往瞄準的方向偏，多看一點前面：手機看右搖桿有沒有推，電腦看游標離角色多遠（游標在角色身上 = 回正）
+  p.lookX = p.lookZ = 0;
+  if (input.aimMode !== 'none') {
+    const max = LOOK_AHEAD * (level.def?.zoom ?? 1);
+    if (input.source === 'touch') { p.lookX = input.aimVec.x * max; p.lookZ = input.aimVec.y * max; }
+    else {
+      ndc.set(input.mouse.x / innerWidth * 2 - 1, -(input.mouse.y / innerHeight) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      if (raycaster.ray.intersectPlane(aimPlane, tmpV)) {
+        // 扣掉鏡頭目前已經偏掉的量 = 鏡頭沒偏時游標指在哪；這樣鏡頭移動不會反過來推著游標跑
+        const po = (innerHeight > innerWidth ? 1.6 : 0.5) * (level.def?.zoom ?? 1);
+        const dx = tmpV.x - (camTarget.x - p.x) - p.x, dz = tmpV.z - (camTarget.z - (p.z - po)) - p.z, d = Math.hypot(dx, dz);
+        const k = d > 0.01 ? Math.min(d * 0.45, max) / d : 0;
+        p.lookX = dx * k; p.lookZ = dz * k;
+      }
+    }
+  }
 
   // 目標方向（游標 / 右搖桿）
   let ax = 0, az = 0, aiming = mode !== 'none';

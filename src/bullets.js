@@ -11,8 +11,8 @@ import { bulletHitsSwing } from './swingdoors.js';
 export const bullets = [];
 // 玩家被彈丸打中的判定半徑（比身體小，擦過去不算）
 export const PLAYER_HIT_R = 0.17;
-// 敵人的彈丸：home = 追蹤轉向速度（弧度 / 秒），homeT = 追蹤幾秒後改直線飛
-export function spawnPellet(style, x, z, dx, dz, speed, { range = 20, home = 0, homeT = 0 } = {}) {
+// 敵人的彈丸：一律直線飛
+export function spawnPellet(style, x, z, dx, dz, speed, { range = 20 } = {}) {
   const st = PELLET[style];
   const g = new THREE.Group();
   const rim = new THREE.Mesh(PELLET_GEO, st.rim);
@@ -23,7 +23,7 @@ export function spawnPellet(style, x, z, dx, dz, speed, { range = 20, home = 0, 
   g.add(rim, core);
   g.position.set(x, GUN_Y, z);
   scene.add(g);
-  bullets.push({ g, owner: 'e', pellet: true, style, r: st.r, x, z, dx, dz, speed, range, dmg: 1, traveled: 0, home, homeT, dying: false, age: 0 });
+  bullets.push({ g, owner: 'e', pellet: true, style, r: st.r, x, z, dx, dz, speed, range, dmg: 1, traveled: 0, dying: false });
 }
 export function spawnBullet(owner, style, x, z, dx, dz, speed, range = 30, dmg = 1) {
   const st = TRACER[style];
@@ -42,14 +42,6 @@ export function updateBullets(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
     if (!b.dying) {
-      b.age += dt;
-      if (b.home && b.age < b.homeT && player.alive) {
-        // 追蹤彈：慢慢轉向玩家
-        const a = Math.atan2(b.dx, b.dz), t = Math.atan2(player.x - b.x, player.z - b.z);
-        let d = Math.atan2(Math.sin(t - a), Math.cos(t - a));
-        d = Math.max(-b.home * dt, Math.min(b.home * dt, d));
-        b.dx = Math.sin(a + d); b.dz = Math.cos(a + d);
-      }
       const total = b.speed * dt;
       const steps = Math.max(1, Math.ceil(total / 0.1));   // 柱子只有 0.25 寬，步子要夠細
       const step = total / steps;
