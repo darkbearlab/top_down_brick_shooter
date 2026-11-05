@@ -25,7 +25,8 @@ export function spawnPellet(style, x, z, dx, dz, speed, { range = 20 } = {}) {
   scene.add(g);
   bullets.push({ g, owner: 'e', pellet: true, style, r: st.r, x, z, dx, dz, speed, range, dmg: 1, traveled: 0, dying: false });
 }
-export function spawnBullet(owner, style, x, z, dx, dz, speed, range = 30, dmg = 1) {
+// extra：玩家槍的特性 { ap 穿甲, pierce 貫穿幾個, cancel 消彈 }
+export function spawnBullet(owner, style, x, z, dx, dz, speed, range = 30, dmg = 1, extra = null) {
   const st = TRACER[style];
   const g = new THREE.Group();
   const core = new THREE.Mesh(UNIT_BOX, st.core);
@@ -35,7 +36,8 @@ export function spawnBullet(owner, style, x, z, dx, dz, speed, range = 30, dmg =
   g.add(core, glow);
   g.scale.z = 0.001;
   scene.add(g);
-  bullets.push({ g, owner, x, z, dx, dz, speed, range, dmg, traveled: 0, len: 0, maxLen: st.maxLen, dying: false });
+  bullets.push({ g, owner, x, z, dx, dz, speed, range, dmg, traveled: 0, len: 0, maxLen: st.maxLen, dying: false,
+    ap: !!extra?.ap, pierce: extra?.pierce ?? 0, cancel: !!extra?.cancel, hitSet: null });
 }
 
 export function updateBullets(dt) {
@@ -69,8 +71,17 @@ export function updateBullets(dt) {
         if (level.swings.length && bulletHitsSwing(b)) { b.dying = true; break; }
         if (b.owner === 'p') {
           for (const e of enemies) {
+            if (e.asm || b.hitSet?.has(e)) continue;   // 組裝中打不到；貫穿過的不重複打
             const ddx = e.x - b.x, ddz = e.z - b.z;
-            if (ddx * ddx + ddz * ddz < (e.r + 0.08) ** 2) { b.dying = true; damageEnemy(e, b); break; }
+            if (ddx * ddx + ddz * ddz < (e.r + 0.08) ** 2) {
+              if (b.pierce > 0) { b.pierce--; (b.hitSet ??= new Set()).add(e); damageEnemy(e, b); continue; }
+              b.dying = true; damageEnemy(e, b); break;
+            }
+          }
+          // 消彈：碰到的敵人彈丸直接打掉
+          if (b.cancel) for (const q of bullets) {
+            if (!q.pellet || q.dying) continue;
+            if ((q.x - b.x) ** 2 + (q.z - b.z) ** 2 < (q.r + 0.12) ** 2) q.dying = true;
           }
           const h = level.hostage;
           if (!b.dying && h?.alive && (h.x - b.x) ** 2 + (h.z - b.z) ** 2 < (h.r + 0.06) ** 2) { b.dying = true; killHostage(b.dx, b.dz); }

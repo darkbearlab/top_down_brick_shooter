@@ -8,6 +8,7 @@ import { DEG, G, GUN_Y, MAX_HITS, addTrauma, camTarget, camera, input, scene } f
 import { burst, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, sparks, voxelBurst } from './fx.js';
 import { castRay, collide, hostageReady, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
 import { spawnBullet } from './bullets.js';
+import { showRunOver } from './run.js';
 import { alertNoise, enemies } from './enemies.js';
 import { flashEl, showToast, leaveLabel, leaveLevel, nextLevel, retryLevel, showPanel, updateAmmoHud, updateHud } from './main.js';
 
@@ -113,6 +114,9 @@ function startRoll() {
   else { p.rdx = p.fx; p.rdz = p.fz; }
   p.roll = ROLL_TIME; p.rollI = ROLL_IFRAME; p.rollCd = ROLL_TIME + ROLL_CD;
   sfx.roll?.();
+  // 強化「滾裝」：翻滾時直接裝滿
+  const cs = curSlot();
+  if (cs.stats.rollReload && cs.ammo < cs.stats.mag && p.swapT <= 0) { cs.ammo = cs.stats.mag; cs.reloadT = 0; sfx.reloadDone(); updateAmmoHud(); }
   burst(p.x, 0.15, p.z, [0x8a8070, 0x6a6458], 3, 1.5, -p.rdx * 2, -p.rdz * 2);
 }
 // 身體繞腰（離地 0.7）往前翻一圈
@@ -216,7 +220,7 @@ export function updatePlayer(dt) {
   const m = playerMuzzle();
   if (aiming) {
     let len = castRay(m.x, m.z, p.fx, p.fz, st.range);
-    for (const e of enemies) len = Math.min(len, rayCircle(m.x, m.z, p.fx, p.fz, e.x, e.z, e.r));
+    for (const e of enemies) if (!e.asm) len = Math.min(len, rayCircle(m.x, m.z, p.fx, p.fz, e.x, e.z, e.r));
     const pulse = 0.85 + Math.sin(G.now * 30) * 0.15;
     const alpha = (slot.reloadT > 0 || p.swapT > 0) ? 0.3 : firing ? 0.35 : 0.8 * pulse;
     setLaser(p.laser, m.x, m.z, p.fx, p.fz, len, GUN_Y, alpha, firing ? 0.05 : 0.07);
@@ -261,7 +265,7 @@ export function updatePlayer(dt) {
       p.fireCd = cst.fireInterval;
       const mm = playerMuzzle();
       const sp = (Math.random() - 0.5) * cst.spread;
-      spawnBullet('p', 'player', mm.x, mm.z, Math.sin(actA + sp), Math.cos(actA + sp), cst.speed, cst.range, cst.damage);
+      spawnBullet('p', 'player', mm.x, mm.z, Math.sin(actA + sp), Math.cos(actA + sp), cst.speed, cst.range, cst.damage, cst);
       muzzleFlash(mm.x, GUN_Y, mm.z, 0xffc040);
       G.muzzleGlow = 0.07;
       p.lastShot = G.now;
@@ -333,6 +337,7 @@ export function killPlayer() {
   G.state = 'dead';
   setTimeout(() => {
     if (G.state !== 'dead') return;
+    if (level.mode === 'run') { showRunOver(); return; }
     showPanel('YOU DIED', `${levelLabel()}<br>被擊中 ${MAX_HITS} 次`, [
       { label: '重來這關', primary: true, run: retryLevel },
       { label: leaveLabel(), run: leaveLevel },

@@ -126,6 +126,20 @@ html, body {
 .btn:disabled { opacity: .35; cursor: default; }
 .btn:not(:disabled):active { transform: scale(.98); }
 #panelButtons .btn { text-align: center; }
+/* 闖關：三選一卡片 */
+.rw-sub { font-size: 13px; opacity: .7; margin: 4px 0 10px; }
+.rw-cards { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.rw-card {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 12px; cursor: pointer;
+  background: rgba(255,255,255,.06); border: 2px solid var(--rc); color: #e8ecf2; font: inherit; text-align: left;
+}
+.rw-card:hover { background: rgba(255,255,255,.12); }
+.rw-card:active { transform: scale(.98); }
+.rw-tag { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--rc); }
+.rw-title { font-size: 17px; font-weight: 900; }
+.rw-line { font-size: 13px; opacity: .85; line-height: 1.5; }
+.rw-line b { color: #ffd060; }
+.rw-line b.ap { color: #ff8a5a; }
 
 /* 武器與裝備 */
 #loadout { align-items: flex-start; overflow-y: auto; touch-action: pan-y; background: rgba(8,10,14,.96); }

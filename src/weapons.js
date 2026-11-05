@@ -50,7 +50,7 @@ export const RECEIVERS = {
     },
   },
   dmr: {
-    name: '精確射手步槍', caliber: '556', desc: '高威力、遠射程、射速慢、轉向慢',
+    name: '精確射手步槍', caliber: '556', desc: '高威力、遠射程、射速慢、轉向慢、能打穿防彈衣', ap: true,
     fireInterval: 0.26, kick: 6, turn: 400, reload: 1.7, mag: 15, weight: 4, spread: 0.015, damage: 1.65, range: 1.35,
     sockets: { stock: { z: -6, y: 1 }, barrel: { z: 10, y: 1 }, mag: { z: 3, y: 0 } },
     shape(s) {
@@ -58,6 +58,19 @@ export const RECEIVERS = {
       s.box(-1, 4, -4, 2, 1, 12, 'metal2');
       s.box(-1, 5, -2, 2, 2, 7, 'poly');     // 瞄準鏡
       s.box(-1, 5, 5, 2, 2, 1, 'lens');
+      s.box(-1, -5, -2, 2, 5, 3, 'poly');
+      s.box(-1, -2, 1, 2, 1, 1, 'metal');
+    },
+  },
+  lmg: {
+    name: '機槍', caliber: '556', desc: '大彈量、能打穿防彈衣、很重、轉向慢、換彈久', ap: true,
+    fireInterval: 0.085, kick: 3, turn: 360, reload: 2.6, mag: 60, weight: 5.5, spread: 0.08, damage: 1.05, range: 1.1,
+    sockets: { stock: { z: -6, y: 1 }, barrel: { z: 10, y: 1 }, mag: { z: 3, y: 0 } },
+    shape(s) {
+      s.box(-1, 0, -6, 2, 5, 16, 'metal');
+      s.box(-1, 5, -3, 2, 1, 10, 'metal2');
+      s.box(-1, 6, 0, 2, 1, 4, 'poly');      // 提把
+      s.box(-2, 1, 2, 4, 3, 5, 'metal2');    // 送彈蓋
       s.box(-1, -5, -2, 2, 5, 3, 'poly');
       s.box(-1, -2, 1, 2, 1, 1, 'metal');
     },
@@ -198,10 +211,14 @@ export function computeStats(build) {
       else s[k] *= m[k];
     }
   }
+  s.ap = !!rec.ap;
+  // 局內撿到的槍才有強化詞條
+  for (const id of build.perks ?? []) PERKS[id]?.apply(s);
   s.mag = Math.max(1, Math.round(s.mag));
   s.rpm = 60 / s.fireInterval;
-  s.name = rec.name;
+  s.name = build.name ?? rec.name;
   s.caliberName = cal.name;
+  s.perks = build.perks ?? [];
   return s;
 }
 
@@ -221,3 +238,41 @@ export function buildWeapon(build) {
 
 // 切換武器時間 = 基本 0.2 秒 + 收起那把和拿出那把的重量
 export const swapTime = statsList => 0.2 + 0.06 * statsList.reduce((t, s) => t + s.weight, 0);
+
+// ---------- 強化詞條（局內掉落的槍才有） ----------
+// short = 拼進槍名的短稱
+export const PERKS = {
+  ap: { name: '穿甲彈', short: '穿甲', desc: '能打穿防彈衣', apply(s) { s.ap = true; } },
+  pierce: { name: '貫穿', short: '貫穿', desc: '子彈打穿第一個敵人繼續飛', apply(s) { s.pierce = (s.pierce ?? 0) + 1; } },
+  cancel: { name: '消彈', short: '消彈', desc: '子彈會打掉碰到的敵人彈丸', apply(s) { s.cancel = true; } },
+  bigmag: { name: '擴容', short: '擴容', desc: '彈匣 +50%', apply(s) { s.mag *= 1.5; } },
+  quick: { name: '快拔', short: '快拔', desc: '換彈時間 -35%', apply(s) { s.reload *= 0.65; } },
+  rollReload: { name: '滾裝', short: '滾裝', desc: '翻滾時直接裝滿彈匣', apply(s) { s.rollReload = true; } },
+  rapid: { name: '連射', short: '連射', desc: '射速 +25%', apply(s) { s.fireInterval /= 1.25; } },
+  hot: { name: '強裝藥', short: '強裝', desc: '威力 +25%、後座力 +20%', apply(s) { s.damage *= 1.25; s.kick *= 1.2; } },
+};
+
+// 稀有度：幾個詞條、顏色
+export const RARITY = [
+  { name: '普通', perks: 0, color: '#c8ccd4' },
+  { name: '精良', perks: 1, color: '#4aa8ff' },
+  { name: '稀有', perks: 2, color: '#c070ff' },
+];
+
+// 隨機拼一把槍：抽彈種 → 相容的槍機 → 每個欄位抽一個裝得上的零件 → 依稀有度抽詞條
+export function randomBuild(rarity = 0, rnd = Math.random) {
+  const pick = arr => arr[Math.floor(rnd() * arr.length)];
+  const caliber = pick(Object.keys(CALIBERS));
+  const receiver = pick(Object.keys(RECEIVERS).filter(k => RECEIVERS[k].caliber === caliber));
+  const b = { caliber, receiver };
+  for (const slot of ['stock', 'mag', 'barrel', 'grip']) {
+    const ok = PARTS[slot].filter(p => !blockReason(slot, p, b));
+    b[slot] = pick(ok).id;
+  }
+  const pool = Object.keys(PERKS).filter(id => !(id === 'ap' && RECEIVERS[receiver].ap));
+  b.perks = [];
+  for (let i = 0; i < RARITY[rarity].perks && pool.length; i++) b.perks.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+  b.rarity = rarity;
+  b.name = [RECEIVERS[receiver].name, ...b.perks.map(id => PERKS[id].short)].join('・');
+  return validate(b).build;
+}

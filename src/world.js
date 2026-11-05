@@ -320,10 +320,11 @@ export const doorMat = new THREE.MeshLambertMaterial({ color: 0x40242a, emissive
 export const exitMat = addMat(0x30ff90, 0.55);
 
 // 關卡池：test = 編輯器正在測試的那一關
-let testLevel = null, randomLevel = null;
+let testLevel = null, randomLevel = null, runLevel = null;
 export function setTestLevel(def) { testLevel = def; }
 export function setRandomLevel(def) { randomLevel = def; }
-export const MODE_NAMES = { trial: '彈幕試玩', breach: '破門', dark: '黑暗', custom: '自訂', test: '測試', random: '隨機' };
+export function setRunLevel(def) { runLevel = def; }
+export const MODE_NAMES = { run: '闖關', trial: '彈幕試玩', breach: '破門', dark: '黑暗', custom: '自訂', test: '測試', random: '隨機' };
 export const levelDefs = mode => ({
   arena: ARENA_ROOMS.map(map => ({ map, aware: true })),
   trial: TRIAL_LEVELS,
@@ -332,12 +333,14 @@ export const levelDefs = mode => ({
   custom: CUSTOM_LEVELS,
   test: [testLevel],
   random: [randomLevel],
+  run: [runLevel],
 })[mode];
 export function levelLabel() {
   if (!level) return '';
   if (level.mode === 'arena') return `ROOM ${level.index + 1}`;
   if (level.mode === 'test') return `測試　${level.def.name ?? ''}`;
   if (level.mode === 'random') return `隨機　${level.def.name ?? ''}`;
+  if (level.mode === 'run') return `闖關　${level.def.name ?? ''}`;
   const defs = levelDefs(level.mode);
   return `${MODE_NAMES[level.mode]} ${level.index + 1}/${defs.length}　${defs[level.index].name}`;
 }
@@ -608,6 +611,51 @@ export function updateSpawner(dt) {
   sp.left--;
 }
 
+// ---------- 增援波 ----------
+// 場上剩 ≤ 1 個敵人時，過一下就從玩家附近（走得到、5～12 格遠）的地板組裝出下一波
+// 一波裡會打散射類彈幕的（散射兵、重砲手、環砲手）最多一個，避免畫面子彈太多
+const SPRAY = 'FHC';
+export function updateWaves(dt) {
+  const w = level.waves;
+  if (!w || w.left <= 0 || G.state !== 'play') return;
+  if (enemies.length > 1) { w.t = 0; return; }
+  w.t += dt;
+  if (w.t < (enemies.length ? 1.6 : 0.8)) return;
+  w.t = 0;
+  w.left--;
+  spawnWave(w);
+}
+function spawnWave(w) {
+  const f = soundField(player.x, player.z, 16);
+  const spots = [];
+  for (let r = 1; r < H - 1; r++) for (let c = 1; c < W - 1; c++) {
+    const d = f[c + r * W];
+    if (d < 5 || d > 12 || isSolidTile(c, r) || level.cells.has(c + r * W) || 'dDV'.includes(level.grid[r][c])) continue;
+    spots.push([c, r]);
+  }
+  for (let i = spots.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [spots[i], spots[j]] = [spots[j], spots[i]]; }
+  const used = [];
+  let spray = 0;
+  const pickType = () => {
+    for (let k = 0; k < 20; k++) {
+      let v = Math.random() * w.types.reduce((a, [, x]) => a + x, 0), t = w.types[0][0];
+      for (const [ty, x] of w.types) { if ((v -= x) < 0) { t = ty; break; } }
+      if (SPRAY.includes(t) && spray >= 1) continue;
+      if (SPRAY.includes(t)) spray++;
+      return t;
+    }
+    return 'S';
+  };
+  for (const [c, r] of spots) {
+    if (used.length >= w.size) break;
+    const x = toWorldX(c), z = toWorldZ(r);
+    if (used.some(([ux, uz]) => Math.hypot(ux - x, uz - z) < 2.2)) continue;
+    used.push([x, z]);
+    spawnEnemy(pickType(), x, z, 0, true, { assemble: true, armored: Math.random() < w.armor });
+  }
+  if (used.length) showToast(`增援 ${w.total - w.left}/${w.total}`, '');
+}
+
 // 人質：雙手舉高站著；只有玩家的子彈會打到他
 export function addHostage(x, z) {
   const man = makeBlockMan({ shirt: 0xe8e4da, pants: 0x5a5a66, skin: 0xf0c9a0 });
@@ -748,7 +796,8 @@ export function updateObjectives(dt) {
     if (h.bar) setBar(h.bar, h.x, 1.9, h.z, h.hp / HOSTAGE_HP);
   }
   if (L.doorOpen) return;
-  if (goal === 'clear' && enemies.length === 0) openExit();
+  updateWaves(dt);
+  if (goal === 'clear' && enemies.length === 0 && !(L.waves?.left > 0)) openExit();
   else if (goal === 'activate' && L.switches.length && L.switches.every(s => s.on)) openExit('全部啟動');
   else if (goal === 'hold') {
     L.holdT -= dt;
@@ -764,7 +813,7 @@ export function goalText() {
     case 'hold': return `撐住 ${Math.ceil(L.holdT)} 秒`;
     case 'extract': return '找到物資';
     case 'rescue': return enemies.length ? `救出人質・敵人剩 ${enemies.length}` : '去碰人質';
-    default: return `清除敵人・剩 ${enemies.length}`;
+    default: return `清除敵人・剩 ${enemies.length}${L.waves?.left > 0 ? `・增援 ${L.waves.left} 波` : ''}`;
   }
 }
 
@@ -833,7 +882,7 @@ export function loadLevel(mode, index) {
     } else if (ch === 'B') addCell(c, r, 'door');
     else if (ch === 'd') addSwingDoor(c, r);
     else if (ch === 'P') { player.x = x; player.z = z; }
-    else if ('RSFHCAZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware);
+    else if ('RSFHCAZG'.includes(ch)) spawnEnemy(ch, x, z, loop, aware, { armored: Math.random() < (def.armor ?? 0) });
     else if (ch === 'L' || ch === 'l') addLamp(x, z, ch === 'l');
   }
   buildCellMesh();
@@ -846,6 +895,8 @@ export function loadLevel(mode, index) {
   resetPlayer();
   buildFlow();
   if (level.goal === 'hold' && def.wave) startSpawner(def.wave);
+  // 增援：場上快清光時，下一波從地板組裝出來
+  level.waves = def.waves ? { left: def.waves.count, size: def.waves.size, types: def.waves.types, armor: def.armor ?? 0, t: 0, total: def.waves.count } : null;
   updateLamps(0);
   G.slowMo = 0; G.hitStop = 0;
   G.state = 'play';

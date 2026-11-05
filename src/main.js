@@ -2,6 +2,7 @@ import { sfx, unlockAudio } from './audio.js';
 import { BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
 import { setHand } from './models.js';
 import { loadLoadout, openLoadout } from './loadout.js';
+import { endRunGear, showRewards, startRun } from './run.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
 import { openEditor } from './editor.js';
 import { openMissionSetup, playRandom } from './missionsetup.js';
@@ -36,6 +37,12 @@ export function clearEntities() {
 export function nextLevel() {
   if (G.state !== 'play') return;
   const defs = levelDefs(level.mode), mode = level.mode;
+  if (mode === 'run') {
+    G.state = 'complete';
+    player.laser.g.visible = player.guide.g.visible = false;
+    showRewards();
+    return;
+  }
   const last = mode !== 'arena' && level.index + 1 >= defs.length;
   if (last && mode === 'random') {
     G.state = 'complete';
@@ -74,6 +81,7 @@ export function retryLevel() {
 }
 
 export function startGame(mode, index) {
+  if (mode !== 'run') endRunGear();
   $('previewBar').classList.add('hidden');
   $('editor').classList.add('hidden');
   menuEl.classList.add('hidden');
@@ -184,6 +192,7 @@ R 換彈・滾輪或 1 / 2 切換武器<br>Q 左手持槍・E 右手持槍・Esc
 // 進入畫面的功能清單：之後新增功能只要加一筆
 // 有 items 的是第二層選單
 export const MENU_ITEMS = [
+  { label: '闖關模式', sub: '從手槍開始・敵人組裝增援・每張圖打完三選一', run: () => startRun() },
   { label: '任務模式', sub: '彈幕試玩・清房・破門攻堅・黑暗・隨機任務', items: [
     { label: '彈幕試玩場', sub: '一間房・射手和重砲手的彈幕・試翻滾手感', run: () => startGame('trial', 0) },
     { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
@@ -254,6 +263,7 @@ function showCustomList() {
 }
 
 export function showMenu() {
+  endRunGear();
   $('genSetup').classList.add('hidden');
   $('charEdit').classList.add('hidden');
   $('previewBar').classList.add('hidden');
