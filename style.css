@@ -74,6 +74,16 @@ html, body {
   font: inherit; font-size: 12px; font-weight: 700;
 }
 #swapBtn.busy { opacity: .45; }
+/* 翻滾鈕：只有觸控裝置顯示 */
+#rollBtn {
+  display: none; position: fixed; z-index: 7; pointer-events: auto;
+  right: calc(18px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom));
+  width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35);
+  background: rgba(0,0,0,.35); color: #e8ecf2; font: inherit; font-size: 18px; font-weight: 900;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#rollBtn:active { background: rgba(90,220,255,.35); }
+@media (pointer: coarse) { #rollBtn { display: block; } }
 
 #toast {
   position: fixed; left: 0; right: 0; top: 22%; text-align: center; z-index: 7; pointer-events: none;

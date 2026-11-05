@@ -3,20 +3,20 @@ import { makeBlockMan, animateMan, setFlash, addGlowEyes } from './models.js';
 import { buildWeapon, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
 import { BODY_LIGHT_R, FLASH_ANGLE, FLASH_RANGE, G, GUN_Y, addTrauma, scene } from './core.js';
-import { burst, freeBar, freeLaser, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, showMarker, sparks, voxelBurst } from './fx.js';
-import { H, LAMP_R, W, bangDoor, castRay, collide, destroyDoor, doorAt, findCoverPath, hasLOS, level, navDir, rayCircle, seekDir, smashArea, soundField, tileC, tileR, zflow } from './world.js';
-import { spawnBullet } from './bullets.js';
+import { burst, freeBar, makeBar, muzzleFlash, setBar, showMarker, sparks, voxelBurst } from './fx.js';
+import { H, LAMP_R, W, bangDoor, collide, destroyDoor, doorAt, findCoverPath, hasLOS, level, navDir, seekDir, smashArea, soundField, tileC, tileR, zflow } from './world.js';
+import { spawnPellet } from './bullets.js';
 import { hurtPlayer, muzzleOf, player } from './player.js';
 
 // ---------- 敵人 ----------
-// mag = 幾發後要換彈；seekCover = 換彈時躲到玩家看不到的地方；react = 發現玩家後幾秒才行動
+// mag = 幾輪攻擊後要換彈；seekCover = 換彈時躲到玩家看不到的地方；react = 發現玩家後幾秒才行動
 export const ETYPES = {
   R: { hp: 60, r: 0.36, speed: 4.1, shirt: 0xd8433b, pants: 0x4a1c1c, helmet: null, scale: 1, gun: false, react: 0.45 },
   S: { hp: 100, r: 0.36, speed: 2.6, shirt: 0xe0892a, pants: 0x3a3022, helmet: 0x6b4a1f, scale: 1, gun: true,
-    mag: 6, reload: 1.7, seekCover: true, aimTime: 0.85, react: 0.55,
+    mag: 3, reload: 1.7, seekCover: true, react: 0.55, pats: ['burst', 'spread3'],
     build: { caliber: '556', receiver: 'carbine', stock: 'fold', mag: 'std', barrel: 'std', grip: 'none' } },
   H: { hp: 320, r: 0.48, speed: 1.7, shirt: 0x7b4fcf, pants: 0x2b2240, helmet: 0x3a2a66, scale: 1.3, gun: true,
-    mag: 2, reload: 2.4, seekCover: false, aimTime: 1.1, react: 0.75,
+    mag: 3, reload: 2.4, seekCover: false, react: 0.75, pats: ['fan', 'ring', 'homing'],
     build: { caliber: '9mm', receiver: 'smg', stock: 'full', mag: 'drum', barrel: 'long', grip: 'vert' } },
   // 黑暗模式：殭屍只會走過來碰你；巨型殭屍會衝撞，衝撞路上的殭屍會被撞開
   Z: { hp: 60, r: 0.34, speed: 1.7, shirt: 0x56606a, pants: 0x2e3328, helmet: null, scale: 1, gun: false, react: 0.35,
@@ -51,10 +51,9 @@ export function spawnEnemy(type, x, z, loop, aware) {
     type, def, man, x, z, vx: 0, vz: 0, hp: def.hp * (1 + loop * 0.2), r: def.r, muzzleFwd,
     fx: Math.sin(a), fz: Math.cos(a), state: 'idle', t: 0.7 + Math.random() * 0.6, ax: 0, az: 1, lx: 0, lz: 1,
     aware, react: -1, ammo: def.mag || 0, coverPath: null,
-    burstLeft: 0, strafe: Math.random() < 0.5 ? -1 : 1, flash: 0,
+    burstLeft: 0, pat: Math.floor(Math.random() * 3), strafe: Math.random() < 0.5 ? -1 : 1, flash: 0,
     speedMul: (1 + loop * 0.15) * (type === 'Z' ? 0.85 + Math.random() * 0.3 : 1),
     seed: Math.random() * 10, cd: 0, stun: 0, vis: 1, blink: 2 + Math.random() * 4, wander: 0, wx: 0, wz: 0,
-    laser: def.gun ? makeLaser(type === 'H' ? 0xc040ff : 0xff2020) : null,
     bar: def.gun ? makeBar(0xffd23a) : null,
   };
   man.body.rotation.y = a;
@@ -114,7 +113,6 @@ export function damageEnemy(e, b) {
 export function freeEnemy(e) {
   e.dead = true;
   scene.remove(e.man.root);
-  if (e.laser) freeLaser(e.laser);
   if (e.bar) freeBar(e.bar);
 }
 
@@ -151,6 +149,52 @@ export function startEnemyReload(e) {
   sfx.enemyReload();
 }
 
+// ---------- 彈幕 ----------
+// 每種攻擊：waves 幾波、gap 每波間隔（秒）；fire 回傳下一波前的等待時間
+// 射手：瞄準三連發 / 三向散射；重砲手輪流：扇形、環形、追蹤彈
+const rot = (dx, dz, a) => [dx * Math.cos(a) + dz * Math.sin(a), -dx * Math.sin(a) + dz * Math.cos(a)];
+export const PATTERNS = {
+  burst: { waves: 3, gap: 0.17, fire(e, m, k) {
+    const [dx, dz] = rot(e.ax, e.az, (Math.random() - 0.5) * 0.08);
+    spawnPellet('enemy', m.x, m.z, dx, dz, 6.5 * k);
+    sfx.enemyShoot();
+  } },
+  spread3: { waves: 2, gap: 0.45, fire(e, m, k) {
+    for (let i = -1; i <= 1; i++) { const [dx, dz] = rot(e.ax, e.az, i * 0.26); spawnPellet('enemy', m.x, m.z, dx, dz, 6 * k); }
+    sfx.enemyShoot();
+  } },
+  fan: { waves: 2, gap: 0.55, fire(e, m, k, wave) {
+    const n = 9, off = wave % 2 ? 0.075 : 0;   // 第二波錯開半格，留縫給你鑽
+    for (let i = 0; i < n; i++) { const [dx, dz] = rot(e.ax, e.az, (i - (n - 1) / 2) * 0.15 + off); spawnPellet('heavy', m.x, m.z, dx, dz, 4.8 * k); }
+    sfx.heavyShoot(); e.vx -= e.ax * 2; e.vz -= e.az * 2;
+  } },
+  ring: { waves: 3, gap: 0.42, fire(e, m, k, wave) {
+    const n = 18, a0 = Math.atan2(e.ax, e.az) + (wave % 2) * Math.PI / n;
+    for (let i = 0; i < n; i++) {
+      const a = a0 + i * Math.PI * 2 / n, dx = Math.sin(a), dz = Math.cos(a);
+      spawnPellet('heavy', e.x + dx * 0.55, e.z + dz * 0.55, dx, dz, 4 * k);
+    }
+    sfx.heavyShoot();
+  } },
+  homing: { waves: 1, gap: 0.6, fire(e, m, k) {
+    for (let i = -1; i <= 1; i++) { const [dx, dz] = rot(e.ax, e.az, i * 0.7); spawnPellet('homing', m.x, m.z, dx, dz, 3.6 * k, { home: 1.7, homeT: 1.8, range: 14 }); }
+    sfx.heavyShoot();
+  } },
+};
+function firePattern(e, m, name) {
+  const p = PATTERNS[name];
+  const wave = p.waves - e.burstLeft;
+  p.fire(e, m, Math.min(1.4, e.speedMul), wave);
+  return p.gap;
+}
+function startAttack(e, nx, nz) {
+  const pats = e.def.pats;
+  e.pat = e.type === 'H' ? (e.pat + 1) % pats.length : (Math.random() < 0.65 ? 0 : 1);
+  e.state = 'fire'; e.t = 0;
+  e.ax = nx; e.az = nz;
+  e.burstLeft = PATTERNS[pats[e.pat]].waves;
+}
+
 export function updateEnemies(dt) {
   for (const e of enemies.slice()) {
     if (!enemies.includes(e)) continue;
@@ -161,7 +205,6 @@ export function updateEnemies(dt) {
     const los = player.alive && hasLOS(e.x, e.z, player.x, player.z);
     const spd = e.def.speed * e.speedMul;
     let wx = 0, wz = 0, faceX = e.fx, faceZ = e.fz, aiming = false, direct = false;
-    let laserOn = false;
 
     if (!e.aware) {
       // 還沒發現玩家：看到就開始反應倒數，倒數時會轉頭
@@ -285,48 +328,29 @@ export function updateEnemies(dt) {
           wx = d.x * ds; wz = d.z * ds;
           if (los) { faceX = nx; faceZ = nz; } else { faceX = d.x; faceZ = d.z; }
           if (e.t <= 0) {
-            if (los && dist < 12) {
-              e.state = 'aim'; e.t = e.def.aimTime;
-              e.ax = nx; e.az = nz; sfx.telegraph();
-            } else e.t = 0.3;
+            if (los && dist < 12) startAttack(e, nx, nz);
+            else e.t = 0.3;
           }
           break;
         }
-        case 'aim': {
-          // 前段追蹤玩家，最後 0.25 秒鎖定 → 玩家有機會閃
-          if (e.t > 0.25) [e.ax, e.az] = rotateToward(e.ax, e.az, nx, nz, (heavy ? 1.6 : 2.4) * dt);
-          faceX = e.ax; faceZ = e.az; laserOn = true;
-          if (e.t <= 0) { e.state = 'fire'; e.burstLeft = heavy ? 1 : Math.min(3, e.ammo); e.t = 0; }
-          break;
-        }
         case 'fire': {
+          // 一輪攻擊 = 好幾波彈丸；每一波重新對準玩家。射手邊打邊慢慢橫移，重砲手站定
+          if (los) { e.ax = nx; e.az = nz; }
           faceX = e.ax; faceZ = e.az;
+          if (!heavy) { wx = -e.az * e.strafe * spd * 0.3; wz = e.ax * e.strafe * spd * 0.3; }
           if (e.t <= 0 && e.burstLeft > 0) {
             const m = muzzleOf(e.x, e.z, e.ax, e.az, e.def.scale, e.muzzleFwd);
-            if (heavy) {
-              for (let k = 0; k < 7; k++) {
-                const a = Math.atan2(e.ax, e.az) + (k - 3) * 0.11 + (Math.random() - 0.5) * 0.04;
-                spawnBullet('e', 'heavy', m.x, m.z, Math.sin(a), Math.cos(a), (8 + Math.random() * 1.5) * e.speedMul, 16);
-              }
-              sfx.heavyShoot();
-              e.vx -= e.ax * 3; e.vz -= e.az * 3;
-              e.t = 0.45;
-            } else {
-              const a = Math.atan2(e.ax, e.az) + (Math.random() - 0.5) * 0.06;
-              spawnBullet('e', 'enemy', m.x, m.z, Math.sin(a), Math.cos(a), 12 * e.speedMul);
-              sfx.enemyShoot();
-              e.t = 0.11;
-            }
+            e.t = firePattern(e, m, e.def.pats[e.pat]);
             muzzleFlash(m.x, GUN_Y * e.def.scale, m.z, heavy ? 0xc060ff : 0xff5030);
             e.burstLeft--;
             if (G.now - (e.lastShot ?? -9) > 1) alertNoise(heavy ? 16 : 14, e.x, e.z);
             e.lastShot = G.now;
-            e.ammo--;
           }
           if (e.burstLeft <= 0 && e.t <= 0) {
+            e.ammo--;
             if (e.ammo <= 0) startEnemyReload(e);
             else {
-              e.state = 'move'; e.t = 1.0 + Math.random() * 0.9;
+              e.state = 'move'; e.t = (heavy ? 1.0 : 0.8) + Math.random() * 0.9;
               if (Math.random() < 0.5) e.strafe *= -1;
             }
           }
@@ -351,18 +375,6 @@ export function updateEnemies(dt) {
           }
           break;
         }
-      }
-      if (e.laser) {
-        if (laserOn) {
-          const m = muzzleOf(e.x, e.z, e.ax, e.az, e.def.scale, e.muzzleFwd);
-          let len = castRay(m.x, m.z, e.ax, e.az, 22);
-          if (player.alive) len = Math.min(len, rayCircle(m.x, m.z, e.ax, e.az, player.x, player.z, player.r));
-          const locked = e.t <= 0.25;
-          const prog = 1 - e.t / e.def.aimTime;
-          const blink = locked ? (Math.floor(e.t * 40) % 2 ? 1 : 0.35) : 1;
-          setLaser(e.laser, m.x, m.z, e.ax, e.az, len, GUN_Y * e.def.scale,
-            (0.3 + prog * 0.6) * blink, locked ? 0.12 : 0.05 + prog * 0.04);
-        } else e.laser.g.visible = false;
       }
       if (e.state === 'reload') setBar(e.bar, e.x, 2.05 * e.def.scale, e.z, 1 - e.t / e.def.reload);
       else e.bar.g.visible = false;

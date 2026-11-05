@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
-import { ARENA_ROOMS, BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
+import { ARENA_ROOMS, BREACH_LEVELS, DARK_LEVELS, TRIAL_LEVELS } from './rooms.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
 import { animateMan, makeBlockMan, setFlash } from './models.js';
 import { CAM_PITCH, FLASH_GEO, G, GUN_Y, UNIT_BOX, WALL_H, WOOD, addMat, addTrauma, camTarget, scene, setLighting } from './core.js';
@@ -323,9 +323,10 @@ export const exitMat = addMat(0x30ff90, 0.55);
 let testLevel = null, randomLevel = null;
 export function setTestLevel(def) { testLevel = def; }
 export function setRandomLevel(def) { randomLevel = def; }
-export const MODE_NAMES = { breach: '破門', dark: '黑暗', custom: '自訂', test: '測試', random: '隨機' };
+export const MODE_NAMES = { trial: '彈幕試玩', breach: '破門', dark: '黑暗', custom: '自訂', test: '測試', random: '隨機' };
 export const levelDefs = mode => ({
   arena: ARENA_ROOMS.map(map => ({ map, aware: true })),
+  trial: TRIAL_LEVELS,
   breach: BREACH_LEVELS,
   dark: DARK_LEVELS.map(d => ({ dark: true, ...d })),
   custom: CUSTOM_LEVELS,

@@ -50,6 +50,7 @@ export const sfx = {
   kill() { tone('triangle', 260, 40, 0.3, 0.3); noise(0.25, 0.4, 900, 0.7); },
   hurt() { tone('sawtooth', 160, 40, 0.4, 0.35); noise(0.3, 0.5, 400, 0.5); },
   telegraph() { tone('sine', 1400, 1400, 0.05, 0.05); },
+  roll() { noise(0.12, 0.18, 900, 0.5); tone('sine', 300, 150, 0.1, 0.04); },
   lunge() { tone('square', 120, 260, 0.15, 0.08); },
   door() { tone('triangle', 400, 900, 0.35, 0.2); },
   die() { tone('sawtooth', 300, 30, 0.9, 0.4); noise(0.8, 0.5, 300, 0.4); },

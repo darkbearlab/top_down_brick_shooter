@@ -1,14 +1,30 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
-import { GUN_Y, TRACER, UNIT_BOX, scene } from './core.js';
+import { GUN_Y, PELLET, PELLET_GEO, TRACER, UNIT_BOX, scene } from './core.js';
 import { sparks } from './fx.js';
 import { LAMP_HIT_DZ, breakLamp, cellAt, colIndex, coverStops, hitColumn, hurtHostage, isSolidTile, killHostage, level, tileC, tileR } from './world.js';
 import { hurtPlayer, player } from './player.js';
 import { damageEnemy, enemies } from './enemies.js';
 import { bulletHitsSwing } from './swingdoors.js';
 
-// ---------- 子彈（曳光彈） ----------
+// ---------- 子彈：玩家是快速曳光彈，敵人是慢速彈丸 ----------
 export const bullets = [];
+// 玩家被彈丸打中的判定半徑（比身體小，擦過去不算）
+export const PLAYER_HIT_R = 0.17;
+// 敵人的彈丸：home = 追蹤轉向速度（弧度 / 秒），homeT = 追蹤幾秒後改直線飛
+export function spawnPellet(style, x, z, dx, dz, speed, { range = 20, home = 0, homeT = 0 } = {}) {
+  const st = PELLET[style];
+  const g = new THREE.Group();
+  const rim = new THREE.Mesh(PELLET_GEO, st.rim);
+  const core = new THREE.Mesh(PELLET_GEO, st.core);
+  rim.scale.setScalar(st.r);
+  core.scale.setScalar(st.r * 0.62);
+  core.position.y = st.r * 0.45;   // 鏡頭從斜上方看：亮的芯放上面一點
+  g.add(rim, core);
+  g.position.set(x, GUN_Y, z);
+  scene.add(g);
+  bullets.push({ g, owner: 'e', pellet: true, style, r: st.r, x, z, dx, dz, speed, range, dmg: 1, traveled: 0, home, homeT, dying: false, age: 0 });
+}
 export function spawnBullet(owner, style, x, z, dx, dz, speed, range = 30, dmg = 1) {
   const st = TRACER[style];
   const g = new THREE.Group();
@@ -26,6 +42,14 @@ export function updateBullets(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
     if (!b.dying) {
+      b.age += dt;
+      if (b.home && b.age < b.homeT && player.alive) {
+        // 追蹤彈：慢慢轉向玩家
+        const a = Math.atan2(b.dx, b.dz), t = Math.atan2(player.x - b.x, player.z - b.z);
+        let d = Math.atan2(Math.sin(t - a), Math.cos(t - a));
+        d = Math.max(-b.home * dt, Math.min(b.home * dt, d));
+        b.dx = Math.sin(a + d); b.dz = Math.cos(a + d);
+      }
       const total = b.speed * dt;
       const steps = Math.max(1, Math.ceil(total / 0.1));   // 柱子只有 0.25 寬，步子要夠細
       const step = total / steps;
@@ -42,7 +66,9 @@ export function updateBullets(dt) {
         const cell = cellAt(c, r);
         if (cell) {
           const k = colIndex(cell, b.x, b.z);
-          if (cell.hp[k] > 0 && (cell.full || coverStops(b, cell))) {
+          // 彈丸一定會被半掩體擋下（看得到就要合理），順便把掩體一點一點啃掉；離開槍口太近的不算
+          const stop = cell.full || (b.pellet ? b.traveled > 0.9 : coverStops(b, cell));
+          if (cell.hp[k] > 0 && stop) {
             b.dying = true;
             hitColumn(cell, k, b.dmg, b.dx, b.dz, b.x - b.dx * 0.05, b.z - b.dz * 0.05);
             break;
@@ -60,9 +86,10 @@ export function updateBullets(dt) {
             if (!l.broken && (l.x - b.x) ** 2 + (l.z + LAMP_HIT_DZ - b.z) ** 2 < 0.22 * 0.22) breakLamp(l);
           }
         } else {
-          if (player.alive && player.inv <= 0) {
-            const ddx = player.x - b.x, ddz = player.z - b.z;
-            if (ddx * ddx + ddz * ddz < 0.3 * 0.3) { b.dying = true; hurtPlayer(b.dx, b.dz); break; }
+          // 翻滾中的無敵時間：彈丸直接穿過去
+          if (player.alive && player.inv <= 0 && player.rollI <= 0) {
+            const ddx = player.x - b.x, ddz = player.z - b.z, hr = b.pellet ? PLAYER_HIT_R + b.r : 0.3;
+            if (ddx * ddx + ddz * ddz < hr * hr) { b.dying = true; hurtPlayer(b.dx, b.dz); break; }
           }
           // 救出來跟著走的人質會被敵人的流彈打到
           const h = level.hostage;
@@ -70,6 +97,14 @@ export function updateBullets(dt) {
         }
       }
       if (b.traveled > b.range) b.dying = true;
+      if (b.pellet) {
+        if (b.dying) {
+          sparks(b.x - b.dx * 0.1, GUN_Y, b.z - b.dz * 0.1, b.style === 'heavy' ? 0xb050ff : 0xff6050, 3, -b.dx, -b.dz);
+          scene.remove(b.g); bullets.splice(i, 1); continue;
+        }
+        b.g.position.set(b.x, GUN_Y, b.z);
+        continue;
+      }
       b.len = Math.min(b.traveled, b.maxLen);
     } else {
       // 彈頭停住，尾巴繼續往前收：曳光拖尾

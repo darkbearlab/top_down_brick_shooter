@@ -17,6 +17,7 @@ export const player = {
   x: 0, z: 0, vx: 0, vz: 0, r: 0.33, fx: 0, fz: -1,
   aimA: Math.PI, recoil: 0, kickSign: 1,   // aimA = 實際槍口角度；recoil = 後座力造成的偏移
   hits: 0, inv: 0, fireCd: 0, alive: true, kick: 0,
+  roll: 0, rollI: 0, rollCd: 0, rdx: 0, rdz: 1,   // 翻滾：剩餘時間、無敵時間、冷卻、方向
   slots: [], cur: 0, swapT: 0, swapDur: 1, swapped: true,
   laser: makeLaser(0x40d8ff), guide: makeLaser(0xffffff), bar: makeBar(0x5adcff),
 };
@@ -48,6 +49,7 @@ export function resetPlayer() {
   const p = player;
   p.vx = p.vz = 0; p.fx = 0; p.fz = -1; p.aimA = Math.PI; p.recoil = 0;
   p.inv = 0.6; p.fireCd = 0; p.alive = true; p.kick = 0;
+  p.roll = p.rollI = p.rollCd = 0; resetRollPose();
   if (p.cur !== 0) { p.cur = 0; mountWeapons(); }
   for (const s of p.slots) { s.ammo = s.stats.mag; s.reloadT = 0; }
   p.swapT = 0; p.swapped = true;
@@ -100,15 +102,49 @@ export const raycaster = new THREE.Raycaster();
 export const aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GUN_Y);
 export const tmpV = new THREE.Vector3(), ndc = new THREE.Vector2();
 
+// ---------- 翻滾閃避 ----------
+// 往移動方向（沒在動就往面對的方向）滾一段；前段無敵，彈丸會直接穿過去；翻滾中不能開槍
+export const ROLL_TIME = 0.42, ROLL_IFRAME = 0.3, ROLL_CD = 0.22, ROLL_SPEED = 9.5;
+function startRoll() {
+  const p = player, ml = Math.hypot(input.move.x, input.move.y);
+  if (ml > 0.2) { p.rdx = input.move.x / ml; p.rdz = input.move.y / ml; }
+  else { p.rdx = p.fx; p.rdz = p.fz; }
+  p.roll = ROLL_TIME; p.rollI = ROLL_IFRAME; p.rollCd = ROLL_TIME + ROLL_CD;
+  sfx.roll?.();
+  burst(p.x, 0.15, p.z, [0x8a8070, 0x6a6458], 3, 1.5, -p.rdx * 2, -p.rdz * 2);
+}
+// 身體繞腰（離地 0.7）往前翻一圈
+const ROLL_PIVOT = 0.7;
+function rollPose(t01) {
+  const b = player.man.body, th = t01 * Math.PI * 2;
+  b.rotation.order = 'YXZ';
+  b.rotation.y = Math.atan2(player.rdx, player.rdz);
+  b.rotation.x = th;
+  const fwd = -ROLL_PIVOT * Math.sin(th);
+  b.position.set(player.rdx * fwd, ROLL_PIVOT - ROLL_PIVOT * Math.cos(th), player.rdz * fwd);
+}
+function resetRollPose() {
+  const b = player.man.body;
+  b.rotation.x = 0; b.position.set(0, 0, 0);
+}
+
 export function updatePlayer(dt) {
   const p = player, slot = curSlot(), st = slot.stats;
   if (!p.alive) { p.laser.g.visible = p.guide.g.visible = p.bar.g.visible = false; return; }
-  const mode = input.aimMode;
+  p.rollCd -= dt; p.rollI -= dt;
+  if (input.rollPressed && p.roll <= 0 && p.rollCd <= 0) startRoll();
+  const mode = p.roll > 0 ? 'none' : input.aimMode;
   const firing = mode === 'fire';
-  const spd = 5.6 * (firing ? 0.78 : 1) * (slot.reloadT > 0 ? 0.9 : 1) * (1 - st.weight * 0.035);
-  const k = 1 - Math.exp(-18 * dt);
-  p.vx += (input.move.x * spd - p.vx) * k;
-  p.vz += (input.move.y * spd - p.vz) * k;
+  if (p.roll > 0) {
+    p.roll -= dt;
+    const s = ROLL_SPEED * (0.55 + 0.45 * p.roll / ROLL_TIME);   // 一開始最快，慢慢收
+    p.vx = p.rdx * s; p.vz = p.rdz * s;
+  } else {
+    const spd = 5.6 * (firing ? 0.78 : 1) * (slot.reloadT > 0 ? 0.9 : 1) * (1 - st.weight * 0.035);
+    const k = 1 - Math.exp(-18 * dt);
+    p.vx += (input.move.x * spd - p.vx) * k;
+    p.vz += (input.move.y * spd - p.vz) * k;
+  }
   p.x += p.vx * dt; p.z += p.vz * dt;
   collide(p, p.r);
 
@@ -229,9 +265,13 @@ export function updatePlayer(dt) {
   if (p.inv > 0) p.inv -= dt;
   p.man.root.visible = p.inv > 0 ? Math.floor(p.inv * 18) % 2 === 0 : true;
   p.man.root.position.set(p.x, 0, p.z);
-  p.man.body.rotation.y = actA;
   const busy = cs.reloadT > 0 || p.swapT > 0;
-  animateMan(p.man, Math.min(1, Math.hypot(p.vx, p.vz) / 5.6), dt, aiming && !busy);
+  if (p.roll > 0) { rollPose(1 - p.roll / ROLL_TIME); animateMan(p.man, 0, dt, false); }
+  else {
+    if (p.man.body.rotation.x) resetRollPose();
+    p.man.body.rotation.y = actA;
+    animateMan(p.man, Math.min(1, Math.hypot(p.vx, p.vz) / 5.6), dt, aiming && !busy);
+  }
   p.man.gun.rotation.x = busy ? 0.7 : 0;
 
   // 走進出口
@@ -243,7 +283,7 @@ export function updatePlayer(dt) {
 
 export function hurtPlayer(dx, dz) {
   const p = player;
-  if (!p.alive || p.inv > 0) return;
+  if (!p.alive || p.inv > 0 || p.rollI > 0) return;
   p.hits++;
   p.inv = 1.0;
   p.vx += dx * 9; p.vz += dz * 9;

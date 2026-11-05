@@ -152,10 +152,15 @@ export const HELP_HTML = `<div class="keys">
 左半邊拖曳：移動<br>
 右半邊拖曳：雷射瞄準，推過虛線圈：開火<br>
 右半邊快速點一下：換彈<br>
+右下角「滾」按鈕：翻滾閃避<br>
 左上角 ⇄ 按鈕：切換武器<br><br>
 <b>電腦</b><br>
 WASD 移動・滑鼠瞄準・左鍵開火<br>
+Shift 或右鍵 翻滾閃避（翻滾前段無敵）<br>
 R 換彈・滾輪或 1 / 2 切換武器<br>Q 左手持槍・E 右手持槍・Esc 暫停<br><br>
+<b>敵人的子彈</b><br>
+敵人打的是看得到的慢速彈丸，用走位和翻滾閃過去<br>
+彈丸會被沙包擋下，但沙包也會被一點一點打掉<br><br>
 <b>武器</b><br>
 淡白線＝你想瞄的方向，雷射＝槍口實際方向<br>
 越重的槍轉得越慢、切換也越慢<br><br>
@@ -179,7 +184,8 @@ R 換彈・滾輪或 1 / 2 切換武器<br>Q 左手持槍・E 右手持槍・Esc
 // 進入畫面的功能清單：之後新增功能只要加一筆
 // 有 items 的是第二層選單
 export const MENU_ITEMS = [
-  { label: '任務模式', sub: '清房・破門攻堅・黑暗・隨機任務', items: [
+  { label: '任務模式', sub: '彈幕試玩・清房・破門攻堅・黑暗・隨機任務', items: [
+    { label: '彈幕試玩場', sub: '一間房・射手和重砲手的彈幕・試翻滾手感', run: () => startGame('trial', 0) },
     { label: '清房模式', sub: '一間一間清，無限循環、越來越難', run: () => startGame('arena', 0) },
     { label: '破門攻堅', sub: `${BREACH_LEVELS.length} 個關卡・踹門慢動作・敵人在門後待命`, run: () => startGame('breach', 0) },
     { label: '黑暗模式', sub: `${DARK_LEVELS.length} 個關卡・只有手電筒和吊燈・殭屍成群`, run: () => startGame('dark', 0) },
@@ -266,6 +272,7 @@ $('previewBack').addEventListener('click', openEditor);
 $('previewPlay').addEventListener('click', () => startGame('test', 0));
 swapBtn.addEventListener('pointerdown', e => { e.preventDefault(); input.swapPressed = true; });
 $('handBtn').addEventListener('pointerdown', e => { e.preventDefault(); input.handPressed = true; });
+$('rollBtn').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); input.rollPressed = true; });
 addEventListener('visibilitychange', () => { if (document.hidden && !TICK) pauseGame(); });
 
 
@@ -314,6 +321,7 @@ export function frame(t) {
   input.handPressed = false;
   input.handSet = 0;
   input.slotSet = -1;
+  input.rollPressed = false;
 
   updateLamps(raw);
   const gt = goalText();
