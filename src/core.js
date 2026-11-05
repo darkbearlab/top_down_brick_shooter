@@ -91,7 +91,8 @@ export const WOOD = [0x7a5230, 0x5a3a20, 0x9a6a40];
 export const WALL_H = 1.4;
 
 // ---------- 共用的遊戲狀態（很多模組都會改） ----------
-export const G = { state: 'menu', hitStop: 0, slowMo: 0, trauma: 0, now: 0, muzzleGlow: 0, lastGroan: 0 };
+// camMul = 鏡頭距離倍率（登場時拉近，之後慢慢回到 1）
+export const G = { state: 'menu', hitStop: 0, slowMo: 0, trauma: 0, now: 0, muzzleGlow: 0, lastGroan: 0, camMul: 1 };
 export const camTarget = new THREE.Vector3();
 export function addTrauma(v) { G.trauma = Math.min(1, G.trauma + v); }
 

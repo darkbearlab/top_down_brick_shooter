@@ -13,7 +13,8 @@ import { setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarg
 import { debris, fx, markers, setWallTest, updateMarkers, updateParticles } from './fx.js';
 import { MODE_NAMES, setTestLevel, W, H, wallAt, buildFlow, goalText, level, levelDefs, levelLabel, loadLevel, updateGates, updateLamps, updateObjectives, updateSpawner, updateSwitches } from './world.js';
 import { bullets, spawnBullet, updateBullets } from './bullets.js';
-import { HAND_KEY, curSlot, equipLoadout, player, playerMuzzle, updatePlayer } from './player.js';
+import { HAND_KEY, cancelPlayerIntro, curSlot, equipLoadout, player, playerMuzzle, updatePlayer, updatePlayerIntro } from './player.js';
+import { hideBossBarNow } from './boss.js';
 import { enemies, freeEnemy, killEnemy, updateEnemies } from './enemies.js';
 
 // ---------- 遊戲流程 ----------
@@ -33,6 +34,7 @@ export function clearEntities() {
   fx.length = 0;
   for (const m of markers) { scene.remove(m.s); m.s.material.dispose(); }
   markers.length = 0;
+  hideBossBarNow();
 }
 
 export function nextLevel() {
@@ -251,6 +253,7 @@ export function previewLevel(def) {
   $('editor').classList.add('hidden');
   loadLevel('test', 0);
   setLighting(false);   // 預覽一律全亮，看得清楚
+  cancelPlayerIntro(); G.camMul = 1;
   G.state = 'preview';
   $('previewBar').classList.remove('hidden');
 }
@@ -280,6 +283,7 @@ export function showMenu() {
   buildMenu();
   menuEl.classList.remove('hidden');
   loadLevel('breach', 0);   // 當背景
+  cancelPlayerIntro(); G.camMul = 1;
   G.state = 'menu';
   player.man.root.visible = false;
 }
@@ -333,6 +337,7 @@ export function frame(t) {
     updateItems(dt);
     updateObjectives(dt);
   }
+  if (dt > 0 && G.state === 'intro') updatePlayerIntro(dt);
   if (dt > 0) updateParticles(dt);
   input.reloadPressed = false;
   input.swapPressed = false;
@@ -364,7 +369,9 @@ export function frame(t) {
   const portrait = innerHeight > innerWidth;
   let lx, lz;
   // 關卡可以設 zoom：彈幕關卡拉遠一點，看得到更多彈丸
-  const zoom = G.state === 'menu' ? 1 : level?.def?.zoom ?? 1;
+  // 登場時拉近（camMul），登場完慢慢拉回來
+  if (G.state !== 'intro') G.camMul += (1 - G.camMul) * (1 - Math.exp(-2.6 * raw));
+  const zoom = G.state === 'menu' ? 1 : (level?.def?.zoom ?? 1) * G.camMul;
   let dist = camDist * zoom;
   if (G.state === 'menu') {
     lx = Math.sin(G.now * 0.15) * 2;
@@ -378,6 +385,9 @@ export function frame(t) {
     const look = player.alive ? 1 : 0;
     lx = player.x + player.lookX * look;
     lz = player.z + player.lookZ * look - (portrait ? 1.6 : 0.5) * zoom;
+    // 頭目組裝中：鏡頭往頭目那邊偏一點，看得到它組起來
+    const boss = enemies.find(e => e.def.boss && e.asm);
+    if (boss) { lx += (boss.x - player.x) * 0.4; lz += (boss.z - player.z) * 0.4; }
   }
   const ck = G.state === 'preview' ? 1 : 1 - Math.exp(-(G.state === 'menu' ? 1 : 6) * raw);
   camTarget.x += (lx - camTarget.x) * ck;

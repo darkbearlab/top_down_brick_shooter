@@ -3,8 +3,10 @@ import { sfx } from './audio.js';
 import { cloneLook, defaultLook } from './character.js';
 import { makeBlockMan, animateMan, setFlash, addGlowEyes } from './models.js';
 import { buildWeapon, WEAPON_PAL } from './weapons.js';
-import { buildVoxelMesh, sampleVoxels } from './voxel.js';
-import { BODY_LIGHT_R, FLASH_ANGLE, FLASH_RANGE, G, GUN_Y, addMat, addTrauma, debrisMat, DEBRIS_GEO, renderer, scene } from './core.js';
+import { buildVoxelMesh } from './voxel.js';
+import { endAssembly, startAssembly, stepAssembly } from './assemble.js';
+import { bossBarSet, bossKilled, updateBoss } from './boss.js';
+import { BODY_LIGHT_R, FLASH_ANGLE, FLASH_RANGE, G, GUN_Y, addTrauma, scene } from './core.js';
 import { burst, freeBar, freeLaser, makeBar, makeLaser, muzzleFlash, setBar, setLaser, showMarker, sparks, voxelBurst } from './fx.js';
 import { H, LAMP_R, W, bangDoor, castRay, collide, destroyDoor, doorAt, findCoverPath, hasLOS, level, navDir, rayCircle, seekDir, smashArea, soundField, tileC, tileR, zflow } from './world.js';
 import { spawnBullet, spawnPellet } from './bullets.js';
@@ -30,6 +32,10 @@ export const ETYPES = {
     build: { caliber: '556', receiver: 'dmr', stock: 'full', mag: 'std', barrel: 'long', grip: 'none' } },
   H: { hp: 320, r: 0.48, speed: 1.7, shirt: 0x7b4fcf, pants: 0x2b2240, helmet: 0x3a2a66, scale: 1.3, gun: true,
     mag: 2, reload: 2.4, seekCover: false, react: 0.75, pat: 'fan',
+    build: { caliber: '9mm', receiver: 'smg', stock: 'full', mag: 'drum', barrel: 'long', grip: 'vert' } },
+  // 頭目（暫定）：超巨大，輪流用各種攻擊；子彈顏色跟著攻擊種類（同小兵的顏色），看顏色就知道是哪一招
+  B: { hp: 2200, r: 0.95, speed: 1.6, shirt: 0x34343f, pants: 0x1c1c24, helmet: 0xc02a3a, ring: 0xff3a4a, scale: 2.6, gun: true, react: 0,
+    boss: true, name: '方塊巨像', kb: 0.12, mass: 30, aimTime: 1.0,
     build: { caliber: '9mm', receiver: 'smg', stock: 'full', mag: 'drum', barrel: 'long', grip: 'vert' } },
   // 黑暗模式：殭屍只會走過來碰你；巨型殭屍會衝撞，衝撞路上的殭屍會被撞開
   Z: { hp: 60, r: 0.34, speed: 1.7, shirt: 0x56606a, pants: 0x2e3328, helmet: null, scale: 1, gun: false, react: 0.35,
@@ -63,7 +69,7 @@ function armoredLook(type, colors) {
   return L;
 }
 
-// opts.armored = 穿防彈衣；opts.assemble = 增援：從地板冒出方塊組裝起來
+// opts.armored = 穿防彈衣；opts.assemble = 增援：從地板冒出方塊組裝起來（數字 = 組裝秒數）；opts.hp = 指定血量
 export function spawnEnemy(type, x, z, loop, aware, opts = {}) {
   const def = ETYPES[type];
   const shirt = type === 'Z' ? ZOMBIE_SHIRTS[Math.floor(Math.random() * ZOMBIE_SHIRTS.length)] : def.shirt;
@@ -86,19 +92,20 @@ export function spawnEnemy(type, x, z, loop, aware, opts = {}) {
   // 沒察覺的敵人隨機朝向
   const a = aware ? 0 : Math.floor(Math.random() * 4) * Math.PI / 2;
   const e = {
-    type, def, man, x, z, vx: 0, vz: 0, hp: def.hp * (1 + loop * 0.2), r: def.r, muzzleFwd,
+    type, def, man, x, z, vx: 0, vz: 0, hp: opts.hp ?? def.hp * (1 + loop * 0.2), r: def.r, muzzleFwd,
     fx: Math.sin(a), fz: Math.cos(a), state: 'idle', t: 0.7 + Math.random() * 0.6, ax: 0, az: 1, lx: 0, lz: 1,
     aware, react: -1, ammo: def.mag || 0, coverPath: null,
     burstLeft: 0, strafe: Math.random() < 0.5 ? -1 : 1, flash: 0,
     speedMul: (1 + loop * 0.15) * (type === 'Z' ? 0.85 + Math.random() * 0.3 : 1),
     seed: Math.random() * 10, cd: 0, stun: 0, vis: 1, blink: 2 + Math.random() * 4, wander: 0, wx: 0, wz: 0,
-    laser: def.snipe ? makeLaser(0x60ff40) : null,
+    laser: def.snipe || def.boss ? makeLaser(0x60ff40) : null,
     bar: def.gun ? makeBar(0xffd23a) : null,
     armored, asm: null, wake: 0,
   };
+  e.maxHp = e.hp;
   man.body.rotation.y = a;
   enemies.push(e);
-  if (opts.assemble) startAssemble(e);
+  if (opts.assemble) startAssemble(e, typeof opts.assemble === 'number' ? opts.assemble : ASSEMBLE_TIME);
   return e;
 }
 
@@ -106,62 +113,28 @@ export function spawnEnemy(type, x, z, loop, aware, opts = {}) {
 // 組裝中：沒有碰撞、打不到、不會傷人；組裝完成那一刻站在上面的玩家會被彈開受傷
 // 完成後閃一下、震一圈，再過 WAKE_TIME 秒才開始移動和射擊
 export const ASSEMBLE_TIME = 1.4, WAKE_TIME = 0.55;
-const RING_GEO = new THREE.RingGeometry(0.5, 0.62, 32);
-renderer.localClippingEnabled = true;
-function startAssemble(e) {
+function startAssemble(e, dur = ASSEMBLE_TIME) {
   const m = e.man, s = e.def.scale;
   // 朝向玩家組裝
   const a = Math.atan2(player.x - e.x, player.z - e.z);
   m.body.rotation.y = a; e.fx = Math.sin(a); e.fz = Math.cos(a);
-  const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
-  m.mats.main.clippingPlanes = [plane];
-  m.mats.main.clipShadows = true;
-  const H = 2.1 * s;
-  // 方塊：從腳邊地板散開的位置往上飛到身上的位置，低的先到
-  const cubes = sampleVoxels(m.root, Math.round(60 * s ** 1.5)).map(v => {
-    const mesh = new THREE.Mesh(DEBRIS_GEO, debrisMat(v.c));
-    const ang = Math.random() * Math.PI * 2, rad = 0.5 + Math.random() * 0.9;
-    const from = { x: v.x + Math.sin(ang) * rad, y: 0.02, z: v.z + Math.cos(ang) * rad };
-    mesh.position.set(from.x, from.y, from.z);
-    mesh.scale.setScalar(0.5);
-    mesh.visible = false;
-    scene.add(mesh);
-    const arrive = 0.25 + (v.y / H) * 0.65 + Math.random() * 0.08;   // 抵達時間（0~1）
-    return { mesh, from, to: v, arrive };
-  });
-  const ring = new THREE.Mesh(RING_GEO, addMat(e.def.shirt, 0.8));
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.set(e.x, 0.03, e.z);
-  ring.scale.setScalar(s);
-  scene.add(ring);
-  e.asm = { t: 0, plane, cubes, ring, H };
+  const A = startAssembly(m, { x: e.x, z: e.z, scale: s, color: e.def.ring ?? e.def.shirt, spread: e.def.boss ? 1.6 : 1 });
+  e.asm = { t: 0, dur, A };
   e.aware = true; e.react = -1;
   sfx.assemble?.();
 }
 function updateAssemble(e, dt) {
-  const A = e.asm;
-  A.t += dt;
-  const k = Math.min(1, A.t / ASSEMBLE_TIME);
-  // 身體從腳往上長出來，跟著方塊抵達的高度
-  A.plane.constant = Math.max(0, (k - 0.25) / 0.65) * A.H;
-  for (const c of A.cubes) {
-    const st = c.arrive - 0.3, u = Math.max(0, Math.min(1, (k - st) / 0.3));
-    c.mesh.visible = u > 0 && u < 1;
-    const ease = 1 - (1 - u) ** 3;
-    c.mesh.position.set(c.from.x + (c.to.x - c.from.x) * ease, c.from.y + (c.to.y - c.from.y) * ease + Math.sin(u * Math.PI) * 0.25, c.from.z + (c.to.z - c.from.z) * ease);
-    c.mesh.rotation.set(u * 6, u * 4, 0);
-  }
-  A.ring.material.opacity = 0.35 + 0.45 * Math.abs(Math.sin(A.t * 9));
-  A.ring.scale.setScalar(e.def.scale * (1.2 - 0.3 * k));
+  const S = e.asm;
+  S.t += dt;
+  const k = Math.min(1, S.t / S.dur);
+  stepAssembly(S.A, k, S.t);
+  e.onAssemble?.(k);
   if (k < 1) return;
   finishAssemble(e);
 }
 function clearAssemble(e) {
-  const A = e.asm;
-  if (!A) return;
-  for (const c of A.cubes) scene.remove(c.mesh);
-  scene.remove(A.ring); A.ring.material.dispose();
-  e.man.mats.main.clippingPlanes = null;
+  if (!e.asm) return;
+  endAssembly(e.asm.A);
   e.asm = null;
 }
 function finishAssemble(e) {
@@ -181,6 +154,7 @@ function finishAssemble(e) {
   }
   e.state = e.type === 'R' || e.def.zombie ? 'chase' : 'move';
   e.t = 0.2;
+  if (e.def.boss) { e.wake = 0.9; addTrauma(0.5); sfx.roar(); }
 }
 export const isSpawning = e => !!e.asm;
 
@@ -229,6 +203,7 @@ export function damageEnemy(e, b) {
   e.vx += b.dx * kb; e.vz += b.dz * kb;
   sparks(b.x, GUN_Y, b.z, 0xffe080, 5, -b.dx, -b.dz);
   burst(b.x, GUN_Y, b.z, [e.def.shirt], 1, 2);
+  if (e.def.boss) bossBarSet(Math.max(0, e.hp) / e.maxHp);
   if (e.hp <= 0) killEnemy(e, b.dx, b.dz);
   else {
     sfx.hit();
@@ -253,6 +228,7 @@ export function killEnemy(e, dx, dz) {
   freeEnemy(e);
   sparks(e.x, 1, e.z, 0xffd060, 12);
   sfx.kill();
+  if (e.def.boss) bossKilled(e);
   const big = e.def.scale > 1.2;
   G.hitStop = Math.max(G.hitStop, big ? 0.09 : e.type === 'Z' ? 0.035 : 0.055);
   addTrauma(big ? 0.5 : e.type === 'Z' ? 0.18 : 0.3);
@@ -423,6 +399,8 @@ export function updateEnemies(dt) {
         if (dash) { player.vx += e.lx * 6; player.vz += e.lz * 6; }
         e.state = 'recover'; e.t = 0.9; e.vx = e.vz = 0;
       }
+    } else if (e.def.boss) {
+      ({ wx, wz, faceX, faceZ, aiming, direct } = updateBoss(e, dt, nx, nz, dist, los, spd));
     } else if (e.type === 'R') {
       switch (e.state) {
         case 'idle': if (e.t <= 0) e.state = 'chase'; break;
@@ -563,11 +541,14 @@ export function updateEnemies(dt) {
     }
     if (player.alive && (e.type !== 'R' || !e.aware) && e.state !== 'dash') {   // 組裝中的在上面就 continue 掉了
       const dx = e.x - player.x, dz = e.z - player.z, d = Math.hypot(dx, dz), min = e.r + player.r;
-      if (d < min && d > 1e-4) { const p = (min - d) / d; e.x += dx * p; e.z += dz * p; }
+      if (d < min && d > 1e-4) {
+        const p = (min - d) / d;
+        if (e.def.boss) { player.x -= dx * p; player.z -= dz * p; } else { e.x += dx * p; e.z += dz * p; }
+      }
     }
     collide(e, e.r);
     // 巨型殭屍衝撞時撞到牆：暈一下（衝撞第一幀速度還沒起來，不算）
-    if (e.type === 'G' && e.state === 'dash' && e.t < 0.38 && Math.hypot(e.x - bx, e.z - bz) < 10.5 * dt * 0.35) {
+    if ((e.type === 'G' || e.def.boss) && e.state === 'dash' && e.t < 0.38 && Math.hypot(e.x - bx, e.z - bz) < 10.5 * dt * 0.35) {
       // 撞到可破壞的東西或鐵捲門就撞破，暈得比較短
       const ix = e.x + e.lx * (e.r + 0.4), iz = e.z + e.lz * (e.r + 0.4);
       const door = doorAt(tileC(e.x + e.lx * (e.r + 0.15)), tileR(e.z + e.lz * (e.r + 0.15)));

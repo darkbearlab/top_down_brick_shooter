@@ -11,6 +11,7 @@ import { spawnBullet } from './bullets.js';
 import { showRunOver } from './run.js';
 import { renderBuffs } from './items.js';
 import { alertNoise, enemies } from './enemies.js';
+import { endAssembly, startAssembly, stepAssembly } from './assemble.js';
 import { flashEl, showToast, leaveLabel, leaveLevel, nextLevel, retryLevel, showPanel, updateAmmoHud, updateHud } from './main.js';
 
 // ---------- 玩家 ----------
@@ -55,6 +56,7 @@ export function resetPlayer() {
   p.vx = p.vz = 0; p.fx = 0; p.fz = -1; p.aimA = Math.PI; p.recoil = 0;
   p.inv = 0.6; p.fireCd = 0; p.alive = true; p.kick = 0;
   p.roll = p.rollI = p.rollCd = 0; resetRollPose();
+  p.lookX = p.lookZ = 0;
   p.buffs.speed = p.buffs.power = p.buffs.quick = 0; renderBuffs();
   if (p.cur !== 0) { p.cur = 0; mountWeapons(); }
   for (const s of p.slots) { s.ammo = s.stats.mag; s.reloadT = 0; }
@@ -63,6 +65,48 @@ export function resetPlayer() {
   p.man.root.position.set(p.x, 0, p.z);
   p.bar.g.visible = false;
   updateAmmoHud();
+}
+
+// ---------- 登場：每一關開始時鏡頭拉近，玩家從地板冒出方塊組裝起來 ----------
+// 組裝中（G.state = 'intro'）整個世界停住；組好閃一下才能動，鏡頭同時慢慢拉回原本的距離
+export const INTRO_TIME = 1.15, INTRO_ZOOM = 0.42;
+let intro = null;
+export function startPlayerIntro() {
+  cancelPlayerIntro();
+  const p = player;
+  p.man.body.rotation.y = Math.atan2(p.fx, p.fz);
+  p.man.root.position.set(p.x, 0, p.z);
+  p.laser.g.visible = p.guide.g.visible = p.bar.g.visible = false;
+  intro = { t: 0, A: startAssembly(p.man, { x: p.x, z: p.z, color: 0x5adcff }) };
+  G.state = 'intro';
+  G.camMul = INTRO_ZOOM;
+  sfx.assemble?.();
+}
+export function updatePlayerIntro(dt) {
+  if (!intro) { G.state = 'play'; return; }
+  intro.t += dt;
+  const k = Math.min(1, intro.t / INTRO_TIME);
+  stepAssembly(intro.A, k, intro.t);
+  animateMan(player.man, 0, dt, false);
+  if (k < 1) return;
+  cancelPlayerIntro();
+  const p = player;
+  setFlash(p.man, true); setTimeout(() => setFlash(p.man, false), 120);
+  sparks(p.x, 1, p.z, 0x5adcff, 16);
+  sparks(p.x, 1, p.z, 0xffffff, 8);
+  burst(p.x, 0.2, p.z, [0x5adcff, 0x8a8070], 4, 3);
+  sfx.assembleDone?.();
+  addTrauma(0.15);
+  G.state = 'play';
+  // 關卡登場後要做的事（頭目登場）
+  const f = level.onStart;
+  level.onStart = null;
+  f?.();
+}
+export function cancelPlayerIntro() {
+  if (!intro) return;
+  endAssembly(intro.A);
+  intro = null;
 }
 
 export function startReload() {
@@ -210,7 +254,7 @@ export function updatePlayer(dt) {
       raycaster.setFromCamera(ndc, camera);
       if (raycaster.ray.intersectPlane(aimPlane, tmpV)) {
         // 扣掉鏡頭目前已經偏掉的量 = 鏡頭沒偏時游標指在哪；這樣鏡頭移動不會反過來推著游標跑
-        const po = (innerHeight > innerWidth ? 1.6 : 0.5) * (level.def?.zoom ?? 1);
+        const po = (innerHeight > innerWidth ? 1.6 : 0.5) * (level.def?.zoom ?? 1) * (G.camMul ?? 1);
         const dx = tmpV.x - (camTarget.x - p.x) - p.x, dz = tmpV.z - (camTarget.z - (p.z - po)) - p.z, d = Math.hypot(dx, dz);
         const k = d > 0.01 ? Math.min(d * 0.45, max) / d : 0;
         p.lookX = dx * k; p.lookZ = dz * k;

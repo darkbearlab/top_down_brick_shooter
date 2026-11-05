@@ -5,7 +5,8 @@ import { CUSTOM_LEVELS } from './custom_levels.js';
 import { animateMan, makeBlockMan, setFlash } from './models.js';
 import { CAM_PITCH, FLASH_GEO, G, GUN_Y, UNIT_BOX, WALL_H, WOOD, addMat, addTrauma, camTarget, scene, setLighting } from './core.js';
 import { burst, freeBar, fx, makeBar, setBar, sparks, voxelBurst } from './fx.js';
-import { player, resetPlayer } from './player.js';
+import { player, resetPlayer, startPlayerIntro } from './player.js';
+import { spawnBoss } from './boss.js';
 import { alertNoise, enemies, spawnEnemy } from './enemies.js';
 import { initItems } from './items.js';
 import { addSwingDoor, collideSwings, raySwings, swingClosedAt } from './swingdoors.js';
@@ -84,9 +85,9 @@ export function pushOutBox(o, rad, minX, minZ, size) {
 }
 // 圓形 vs 方格牆；可破壞的格子逐根柱子算
 export function collide(o, rad) {
-  const c0 = tileC(o.x), r0 = tileR(o.z);
-  for (let r = r0 - 1; r <= r0 + 1; r++) {
-    for (let c = c0 - 1; c <= c0 + 1; c++) {
+  const c0 = tileC(o.x), r0 = tileR(o.z), n = rad > 0.5 ? 2 : 1;   // 頭目很大，要多看一圈格子
+  for (let r = r0 - n; r <= r0 + n; r++) {
+    for (let c = c0 - n; c <= c0 + n; c++) {
       const minX = c - W / 2, minZ = r - H / 2;
       if (isSolidTile(c, r)) { pushOutBox(o, rad, minX, minZ, 1); continue; }
       const cell = cellAt(c, r);
@@ -820,7 +821,7 @@ export function updateObjectives(dt) {
   }
   if (L.doorOpen) return;
   updateWaves(dt);
-  if (goal === 'clear' && enemies.length === 0 && !(L.waves?.left > 0)) openExit();
+  if (goal === 'clear' && enemies.length === 0 && !(L.waves?.left > 0) && !L.onStart) openExit();
   else if (goal === 'activate' && L.switches.length && L.switches.every(s => s.on)) openExit('全部啟動');
   else if (goal === 'hold') {
     L.holdT -= dt;
@@ -921,10 +922,12 @@ export function loadLevel(mode, index) {
   // 增援：場上快清光時，下一波從地板組裝出來
   initItems(def);
   level.waves = def.waves ? { ...def.waves, left: def.waves.count, total: def.waves.count, armor: def.armor ?? 0, t: -1, timer: 0 } : null;
+  // 頭目關：玩家登場完才開始組裝頭目
+  level.onStart = def.boss ? () => spawnBoss(toWorldX(def.boss.c), toWorldZ(def.boss.r), def.boss.hp) : null;
   updateLamps(0);
   G.slowMo = 0; G.hitStop = 0;
-  G.state = 'play';
-  camTarget.set(player.x, 0, player.z - 1);
+  startPlayerIntro();
+  camTarget.set(player.x, 0, player.z - 0.5);
   document.getElementById('room').textContent = levelLabel();
   updateHud();
 }

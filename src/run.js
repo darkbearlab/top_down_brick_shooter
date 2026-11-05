@@ -15,7 +15,10 @@ const START_GUN = { caliber: '9mm', receiver: 'pistol', stock: 'none', mag: 'std
 const WAVE_TYPES = [['R', 0.24], ['S', 0.4], ['F', 0.12], ['H', 0.07], ['C', 0.05], ['A', 0.12]];
 
 // 開放場地 + 多波增援：一波人不多，但從不同方向來；場上快清光或過了 every 秒就來下一波（場上人數有上限）
+// 每第三層是頭目關（暫定）：沒有增援，只有一隻超巨大的頭目
+export const isBossDepth = d => d % 3 === 0;
 function mapDef(depth) {
+  if (isBossDepth(depth)) return bossDef(depth);
   const def = generateArena({ depth });
   def.zoom = 1.3;
   // 第一層手上只有手槍，先不出防彈衣
@@ -37,6 +40,19 @@ function mapDef(depth) {
   if (depth >= 2 && Math.random() < 0.6) def.items.push({ kind: Math.random() < 0.5 ? 'armor' : 'heal', at: 20 + Math.random() * 20 });
   def.drops = 0.08;   // 每個敵人死掉有 8% 掉道具
   def.name = `第 ${depth} 層`;
+  return def;
+}
+
+function bossDef(depth) {
+  const def = generateArena({ depth, boss: true });
+  def.zoom = 1.35;
+  def.boss.hp = 1600 + depth * 200;
+  def.items = [
+    { kind: 'heal', at: 25 + Math.random() * 10 },
+    { kind: ['speed', 'power', 'quick'][Math.floor(Math.random() * 3)], at: 12 + Math.random() * 6 },
+  ];
+  def.drops = 0.15;   // 召喚出來的小兵
+  def.name = `第 ${depth} 層・頭目`;
   return def;
 }
 
@@ -82,7 +98,8 @@ function rollRarity(depth) {
   return v < epic ? 2 : v < epic + rare ? 1 : 0;
 }
 function gunReward(depth) {
-  const build = randomBuild(rollRarity(depth));
+  // 打完頭目：至少精良
+  const build = randomBuild(Math.max(rollRarity(depth), isBossDepth(depth) ? 1 : 0));
   const s = computeStats(build), r = RARITY[build.rarity];
   return {
     kind: 'gun', build, title: s.name, tag: r.name, color: r.color,
@@ -113,7 +130,7 @@ const cardHtml = (o, i) => `<button class="rw-card" data-i="${i}" style="--rc:${
 
 export function showRewards() {
   const opts = drawRewards();
-  showPanel(`第 ${RUN.depth} 層 清除`, `<div class="rw-sub">選一個帶走</div><div class="rw-cards">${opts.map(cardHtml).join('')}</div>`, []);
+  showPanel(isBossDepth(RUN.depth) ? `第 ${RUN.depth} 層 頭目擊破` : `第 ${RUN.depth} 層 清除`, `<div class="rw-sub">選一個帶走</div><div class="rw-cards">${opts.map(cardHtml).join('')}</div>`, []);
   document.querySelectorAll('#panelText .rw-card').forEach(el => {
     el.onclick = () => takeReward(opts[+el.dataset.i]);
   });

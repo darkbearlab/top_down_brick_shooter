@@ -329,10 +329,13 @@ export function generateArena(opts) {
   // 玩家在中間偏下：四面八方都可能來敵人
   const pc = mid, pr = Math.floor(H / 2) + 2;
   g[pr][pc] = 'P';
+  // 頭目關：頭目在玩家正前方 9 格，那一圈不放障礙物，也不放小兵
+  const boss = opts.boss ? { c: mid, r: Math.max(4, pr - 9) } : null;
 
   // 這些格子跟它們的一圈鄰居都要是空地、離外牆至少 2 格、離玩家至少 3 格
   const free = cells => cells.every(([c, r]) => {
     if (c < 2 || r < 2 || c > W - 3 || r > H - 3 || Math.hypot(c - pc, r - pr) < 3.5) return false;
+    if (boss && Math.hypot(c - boss.c, r - boss.r) < 4.5) return false;
     for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (g[r + dr][c + dc] !== '.') return false;
     return true;
   });
@@ -351,7 +354,7 @@ export function generateArena(opts) {
   }
 
   // 開場只放很少的敵人（第 1 層不放），離玩家遠一點
-  const start = depth <= 1 ? 0 : Math.min(3, Math.floor((depth + 1) / 3));
+  const start = depth <= 1 || boss ? 0 : Math.min(3, Math.floor((depth + 1) / 3));
   const types = ['S', 'S', 'R', 'A'];
   for (let k = 0, placed = 0; k < 400 && placed < start; k++) {
     const c = ri(2, W - 3), r = ri(1, H - 3);
@@ -359,5 +362,5 @@ export function generateArena(opts) {
     g[r][c] = types[Math.floor(rnd() * types.length)];
     placed++;
   }
-  return { map: g.map(row => row.join('')), goal: 'clear', seed };
+  return { map: g.map(row => row.join('')), goal: 'clear', seed, boss };
 }

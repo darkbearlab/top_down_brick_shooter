@@ -96,6 +96,28 @@ html, body {
 #rollBtn { --cd: 0; background-image: linear-gradient(to top, rgba(90,220,255,.35) calc((1 - var(--cd)) * 100%), transparent 0); opacity: calc(1 - var(--cd) * 0.55); }
 @media (pointer: coarse) { #rollBtn { display: block; } }
 
+/* 頭目血條：畫面下方一排方塊，登場時從左到右組起來，掉血的格子碎掉噴開 */
+#bossBar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 16px);
+  width: min(78vw, 560px); z-index: 6; pointer-events: none; text-align: center;
+}
+#bossBar.hidden { display: none; }
+#bossBar .bb-name { font-weight: 900; font-size: 13px; letter-spacing: 4px; color: #ff8a90; text-shadow: 0 1px 4px rgba(0,0,0,.8); margin-bottom: 4px; }
+#bossBar .bb-segs { display: flex; gap: 2px; padding: 3px; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.15); border-radius: 3px; }
+#bossBar .bb-seg { flex: 1; height: 12px; position: relative; --f: 1; opacity: 0; }
+#bossBar .bb-seg i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--f) * 100%); background: linear-gradient(#ff6a70, #c81e2a); box-shadow: inset 0 -2px 0 rgba(0,0,0,.25); }
+#bossBar .bb-seg.on { animation: bbIn .28s cubic-bezier(.2,1.6,.4,1) forwards; }
+#bossBar.ready .bb-seg.on i { animation: bbFlash .35s ease-out; }
+#bossBar .bb-seg.broken { animation: bbBreak .18s ease-out forwards; }
+#bossBar .bb-shard { position: absolute; background: #ff5a62; animation: bbShard .7s ease-out forwards; }
+@keyframes bbIn { 0% { opacity: 0; transform: translateY(16px) rotate(90deg) scale(.3); } 100% { opacity: 1; transform: none; } }
+@keyframes bbFlash { 0% { background: #fff; } 100% { } }
+@keyframes bbBreak { 0% { opacity: 1; filter: brightness(3); } 100% { opacity: 0; transform: scale(.5); } }
+@keyframes bbShard {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 50px)) rotate(var(--r)); opacity: 0; }
+}
+
 #toast {
   position: fixed; left: 0; right: 0; top: 22%; text-align: center; z-index: 7; pointer-events: none;
   font-weight: 900; font-size: clamp(28px, 9vw, 48px); letter-spacing: 6px; opacity: 0;
