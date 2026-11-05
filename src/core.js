@@ -20,6 +20,20 @@ scene.background = new THREE.Color(0x0b0d12);
 
 export const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 120);
 export const CAM_PITCH = THREE.MathUtils.degToRad(62);
+// 鏡頭沒往瞄準方向偏時，鏡頭中心在玩家前後多遠（世界 z，正 = 鏡頭中心在玩家下方）
+// 橫式：玩家略偏下；直式（手機）：玩家離上、左、右邊差不多遠（離上緣 = 半個螢幕寬），下面留給手指操作區和下方的敵人
+export function camRestZ(dist) {
+  if (innerHeight <= innerWidth) return -0.5 * dist / camDist;
+  const ny = 1 - 2 * Math.min(0.5, innerWidth / 2 / innerHeight);   // 玩家在畫面上的 NDC y
+  const a = Math.atan(ny * Math.tan(camera.fov * Math.PI / 360));
+  return dist * (Math.sin(CAM_PITCH) / Math.tan(CAM_PITCH - a) - Math.cos(CAM_PITCH));
+}
+// 畫面上緣、下緣（正中央那條線）落在地上的位置，相對鏡頭中心的 z
+export function camEdgesZ(dist) {
+  const f = camera.fov * Math.PI / 360, P = CAM_PITCH;
+  const at = a => dist * (Math.cos(P) - Math.sin(P) / Math.tan(P - a));
+  return [at(f), at(-f)];
+}
 export let camDist = 20;
 export function resize() {
   renderer.setSize(innerWidth, innerHeight);

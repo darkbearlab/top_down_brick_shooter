@@ -65,6 +65,8 @@ html, body {
 #stickR.fire .knob { background: rgba(255,190,60,.9); }
 
 #ammo { width: 132px; }
+/* 生命在角色頭上、彈數在腳下（src/playerhud.js），HUD 不再顯示 */
+#hits, #ammoNum, #ammoBar { display: none !important; }
 #ammo .wrow { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
 #ammoNum { font-size: 15px; font-variant-numeric: tabular-nums; }
 #ammoBar { height: 6px; background: rgba(255,255,255,.14); border-radius: 3px; overflow: hidden; }

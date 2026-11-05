@@ -9,12 +9,13 @@ import { openEditor } from './editor.js';
 import { openMissionSetup, playRandom } from './missionsetup.js';
 import { openCharEdit } from './charedit.js';
 import { updateSwingDoors } from './swingdoors.js';
-import { setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
+import { camEdgesZ, camRestZ, setLighting, CAM_PITCH, G, GUN_Y, MAX_HITS, bodyLight, camDist, camTarget, camera, flashlight, input, muzzleLight, renderer, scene, sun } from './core.js';
 import { debris, fx, markers, setWallTest, updateMarkers, updateParticles } from './fx.js';
 import { MODE_NAMES, setTestLevel, W, H, wallAt, buildFlow, goalText, level, levelDefs, levelLabel, loadLevel, updateGates, updateLamps, updateObjectives, updateSpawner, updateSwitches } from './world.js';
 import { bullets, spawnBullet, updateBullets } from './bullets.js';
 import { HAND_KEY, cancelPlayerIntro, curSlot, equipLoadout, player, playerMuzzle, updatePlayer, updatePlayerIntro } from './player.js';
 import { hideBossBarNow } from './boss.js';
+import { updatePlayerHud } from './playerhud.js';
 import { enemies, freeEnemy, killEnemy, updateEnemies } from './enemies.js';
 
 // ---------- 遊戲流程 ----------
@@ -338,6 +339,7 @@ export function frame(t) {
     updateObjectives(dt);
   }
   if (dt > 0 && G.state === 'intro') updatePlayerIntro(dt);
+  updatePlayerHud(raw);
   if (dt > 0) updateParticles(dt);
   input.reloadPressed = false;
   input.swapPressed = false;
@@ -365,8 +367,7 @@ export function frame(t) {
   // 出口閃爍
   for (const m of level.exitMeshes) m.material.opacity = 0.35 + Math.sin(G.now * 6) * 0.2;
 
-  // 攝影機：跟玩家、往瞄準方向前探、直式時讓角色偏下方；選單時慢慢飄
-  const portrait = innerHeight > innerWidth;
+  // 攝影機：跟玩家、往瞄準方向前探（直式時玩家放在上方，見 camRestZ）；選單時慢慢飄
   let lx, lz;
   // 關卡可以設 zoom：彈幕關卡拉遠一點，看得到更多彈丸
   // 登場時拉近（camMul），登場完慢慢拉回來
@@ -384,10 +385,16 @@ export function frame(t) {
   } else {
     const look = player.alive ? 1 : 0;
     lx = player.x + player.lookX * look;
-    lz = player.z + player.lookZ * look - (portrait ? 1.6 : 0.5) * zoom;
+    lz = player.z + player.lookZ * look + camRestZ(dist);
     // 頭目組裝中：鏡頭往頭目那邊偏一點，看得到它組起來
     const boss = enemies.find(e => e.def.boss && e.asm);
     if (boss) { lx += (boss.x - player.x) * 0.4; lz += (boss.z - player.z) * 0.4; }
+    // 直式：鏡頭不要拍到地圖上下緣外面的空白（地圖比畫面矮就置中）
+    if (innerHeight > innerWidth) {
+      const [top, bot] = camEdgesZ(dist), m = 0.6;
+      const lo = -H / 2 - m - top, hi = H / 2 + m - bot;
+      lz = lo <= hi ? Math.max(lo, Math.min(hi, lz)) : (lo + hi) / 2;
+    }
   }
   const ck = G.state === 'preview' ? 1 : 1 - Math.exp(-(G.state === 'menu' ? 1 : 6) * raw);
   camTarget.x += (lx - camTarget.x) * ck;

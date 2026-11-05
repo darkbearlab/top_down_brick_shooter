@@ -4,7 +4,7 @@ import { loadPlayerLook } from './character.js';
 import { makeBlockMan, animateMan, setFlash, setHand } from './models.js';
 import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
-import { DEG, G, GUN_Y, MAX_HITS, addMat, addTrauma, camTarget, camera, input, scene } from './core.js';
+import { DEG, G, GUN_Y, MAX_HITS, addMat, addTrauma, camDist, camRestZ, camTarget, camera, input, scene } from './core.js';
 import { burst, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, sparks, voxelBurst } from './fx.js';
 import { castRay, collide, hostageReady, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
 import { spawnBullet } from './bullets.js';
@@ -254,8 +254,8 @@ export function updatePlayer(dt) {
       raycaster.setFromCamera(ndc, camera);
       if (raycaster.ray.intersectPlane(aimPlane, tmpV)) {
         // 扣掉鏡頭目前已經偏掉的量 = 鏡頭沒偏時游標指在哪；這樣鏡頭移動不會反過來推著游標跑
-        const po = (innerHeight > innerWidth ? 1.6 : 0.5) * (level.def?.zoom ?? 1) * (G.camMul ?? 1);
-        const dx = tmpV.x - (camTarget.x - p.x) - p.x, dz = tmpV.z - (camTarget.z - (p.z - po)) - p.z, d = Math.hypot(dx, dz);
+        const rest = camRestZ(camDist * (level.def?.zoom ?? 1) * (G.camMul ?? 1));
+        const dx = tmpV.x - (camTarget.x - p.x) - p.x, dz = tmpV.z - (camTarget.z - (p.z + rest)) - p.z, d = Math.hypot(dx, dz);
         const k = d > 0.01 ? Math.min(d * 0.45, max) / d : 0;
         p.lookX = dx * k; p.lookZ = dz * k;
       }

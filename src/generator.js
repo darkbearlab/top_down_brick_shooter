@@ -326,8 +326,8 @@ export function generateArena(opts) {
   const g = Array.from({ length: H }, (_, r) => Array.from({ length: W }, (_, c) => (r === 0 || c === 0 || r === H - 1 || c === W - 1) ? '#' : '.'));
   const mid = Math.floor(W / 2);
   for (let c = mid - 1; c <= mid + 1; c++) g[0][c] = 'D';
-  // 玩家在中間偏下：四面八方都可能來敵人
-  const pc = mid, pr = Math.floor(H / 2) + 2;
+  // 玩家在正中間：四面八方都可能來敵人（手機上玩家在畫面上方，下面要看得到地圖）
+  const pc = mid, pr = Math.floor(H / 2);
   g[pr][pc] = 'P';
   // 頭目關：頭目在玩家正前方 9 格，那一圈不放障礙物，也不放小兵
   const boss = opts.boss ? { c: mid, r: Math.max(4, pr - 9) } : null;
