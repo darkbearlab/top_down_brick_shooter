@@ -21,7 +21,7 @@ export class Input {
     this.handPressed = false;   // 觸控按鈕：換另一手
     this.handSet = 0;           // Q = -1 左手、E = 1 右手（重複按不會換手）
     this.slotSet = -1;          // 數字鍵 1 / 2 直接選主 / 副武器
-    this.rollPressed = false;   // 翻滾：Shift / 滑鼠右鍵 / 觸控的翻滾鈕
+    this.rollPressed = false;   // 翻滾：Space / Shift / 滑鼠右鍵 / 觸控的翻滾鈕
     el.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > 10) this.swapPressed = true; }, { passive: true });
 
     this.left = { id: null, ox: 0, oy: 0, x: 0, y: 0, el: document.getElementById('stickL') };
@@ -50,7 +50,7 @@ export class Input {
       this.keys.add(e.code);
       if (e.repeat) return;
       if (e.code === 'KeyR') this.reloadPressed = true;
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.rollPressed = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') this.rollPressed = true;
       if (e.code === 'KeyQ') this.handSet = -1;
       if (e.code === 'KeyE') this.handSet = 1;
       if (e.code === 'Digit1') this.slotSet = 0;
@@ -145,7 +145,7 @@ export class Input {
       if (k.has('KeyS') || k.has('ArrowDown')) y += 1;
       const d = Math.hypot(x, y) || 1;
       this.move.x = x / d; this.move.y = y / d;
-      this.aimMode = !this.mouse.seen ? 'none' : (this.mouse.down || k.has('Space')) ? 'fire' : 'laser';
+      this.aimMode = !this.mouse.seen ? 'none' : this.mouse.down ? 'fire' : 'laser';
     }
     // 鍵盤也可在觸控模式下切回（有按鍵就視為電腦）
     if (this.source === 'touch' && this.keys.size) this.source = 'mouse';

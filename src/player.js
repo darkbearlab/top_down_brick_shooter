@@ -4,11 +4,12 @@ import { loadPlayerLook } from './character.js';
 import { makeBlockMan, animateMan, setFlash, setHand } from './models.js';
 import { computeStats, buildWeapon, swapTime, WEAPON_PAL } from './weapons.js';
 import { buildVoxelMesh } from './voxel.js';
-import { DEG, G, GUN_Y, MAX_HITS, addTrauma, camTarget, camera, input, scene } from './core.js';
+import { DEG, G, GUN_Y, MAX_HITS, addMat, addTrauma, camTarget, camera, input, scene } from './core.js';
 import { burst, fx, makeBar, makeLaser, muzzleFlash, setBar, setLaser, sparks, voxelBurst } from './fx.js';
 import { castRay, collide, hostageReady, level, levelLabel, nearestColumn, rayCircle, smashCell, tileC, tileR } from './world.js';
 import { spawnBullet } from './bullets.js';
 import { showRunOver } from './run.js';
+import { renderBuffs } from './items.js';
 import { alertNoise, enemies } from './enemies.js';
 import { flashEl, showToast, leaveLabel, leaveLevel, nextLevel, retryLevel, showPanel, updateAmmoHud, updateHud } from './main.js';
 
@@ -20,6 +21,8 @@ export const player = {
   hits: 0, inv: 0, fireCd: 0, alive: true, kick: 0,
   lookX: 0, lookZ: 0,
   roll: 0, rollI: 0, rollCd: 0, rdx: 0, rdz: 1,   // 翻滾：剩餘時間、無敵時間、冷卻、方向
+  armor: 0,                                        // 護甲：擋一次傷害，闖關中帶到下一關
+  buffs: { speed: 0, power: 0, quick: 0 },          // 限時 buff 剩幾秒，換關歸零
   slots: [], cur: 0, swapT: 0, swapDur: 1, swapped: true,
   laser: makeLaser(0x40d8ff), guide: makeLaser(0xffffff), bar: makeBar(0x5adcff),
 };
@@ -52,6 +55,7 @@ export function resetPlayer() {
   p.vx = p.vz = 0; p.fx = 0; p.fz = -1; p.aimA = Math.PI; p.recoil = 0;
   p.inv = 0.6; p.fireCd = 0; p.alive = true; p.kick = 0;
   p.roll = p.rollI = p.rollCd = 0; resetRollPose();
+  p.buffs.speed = p.buffs.power = p.buffs.quick = 0; renderBuffs();
   if (p.cur !== 0) { p.cur = 0; mountWeapons(); }
   for (const s of p.slots) { s.ammo = s.stats.mag; s.reloadT = 0; }
   p.swapT = 0; p.swapped = true;
@@ -107,7 +111,8 @@ export const tmpV = new THREE.Vector3(), ndc = new THREE.Vector2();
 // ---------- 翻滾閃避 ----------
 // 往移動方向（沒在動就往面對的方向）滾一段；前段無敵，彈丸會直接穿過去；翻滾中不能開槍
 export const LOOK_AHEAD = 2.6;   // 鏡頭往瞄準方向最多偏幾格（乘上關卡 zoom）
-export const ROLL_TIME = 0.42, ROLL_IFRAME = 0.3, ROLL_CD = 0.22, ROLL_SPEED = 9.5;
+// ROLL_CD = 翻滾結束後要等多久才能再滾
+export const ROLL_TIME = 0.42, ROLL_IFRAME = 0.3, ROLL_CD = 0.75, ROLL_SPEED = 9.5;
 function startRoll() {
   const p = player, ml = Math.hypot(input.move.x, input.move.y);
   if (ml > 0.2) { p.rdx = input.move.x / ml; p.rdz = input.move.y / ml; }
@@ -134,10 +139,36 @@ function resetRollPose() {
   b.rotation.x = 0; b.position.set(0, 0, 0);
 }
 
+// 翻滾冷卻：腳下一圈淡淡的環，冷卻中從大縮到小，好了閃一下
+const rollRing = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.52, 32), addMat(0x5adcff, 0.5));
+rollRing.rotation.x = -Math.PI / 2;
+rollRing.visible = false;
+scene.add(rollRing);
+const rollBtn = document.getElementById('rollBtn');
+let rollReadyFlash = 0;
+function updateRollIndicator(dt) {
+  const p = player, total = ROLL_TIME + ROLL_CD;
+  const cooling = p.alive && p.rollCd > 0;
+  rollRing.position.set(p.x, 0.04, p.z);
+  if (cooling) {
+    rollRing.visible = true;
+    rollRing.scale.setScalar(0.4 + 0.6 * p.rollCd / total);
+    rollRing.material.opacity = 0.45;
+    rollReadyFlash = 0.18;
+  } else if (rollReadyFlash > 0 && p.alive) {
+    rollReadyFlash -= dt;
+    rollRing.visible = true;
+    rollRing.scale.setScalar(1.1);
+    rollRing.material.opacity = rollReadyFlash * 4;
+  } else rollRing.visible = false;
+  if (rollBtn) rollBtn.style.setProperty('--cd', cooling ? (p.rollCd / total).toFixed(3) : 0);
+}
+
 export function updatePlayer(dt) {
   const p = player, slot = curSlot(), st = slot.stats;
   if (!p.alive) { p.laser.g.visible = p.guide.g.visible = p.bar.g.visible = false; return; }
   p.rollCd -= dt; p.rollI -= dt;
+  updateRollIndicator(dt);
   if (input.rollPressed && p.roll <= 0 && p.rollCd <= 0) startRoll();
   const mode = p.roll > 0 ? 'none' : input.aimMode;
   const firing = mode === 'fire';
@@ -146,7 +177,7 @@ export function updatePlayer(dt) {
     const s = ROLL_SPEED * (0.55 + 0.45 * p.roll / ROLL_TIME);   // 一開始最快，慢慢收
     p.vx = p.rdx * s; p.vz = p.rdz * s;
   } else {
-    const spd = 5.6 * (firing ? 0.78 : 1) * (slot.reloadT > 0 ? 0.9 : 1) * (1 - st.weight * 0.035);
+    const spd = 5.6 * (p.buffs.speed > 0 ? 1.3 : 1) * (firing ? 0.78 : 1) * (slot.reloadT > 0 ? 0.9 : 1) * (1 - st.weight * 0.035);
     const k = 1 - Math.exp(-18 * dt);
     p.vx += (input.move.x * spd - p.vx) * k;
     p.vz += (input.move.y * spd - p.vz) * k;
@@ -253,7 +284,7 @@ export function updatePlayer(dt) {
   const cs = curSlot(), cst = cs.stats;
   if (input.reloadPressed) startReload();
   if (cs.reloadT > 0) {
-    cs.reloadT -= dt;
+    cs.reloadT -= dt * (p.buffs.quick > 0 ? 2 : 1);   // 快換：換彈速度兩倍
     if (cs.reloadT <= 0) { cs.reloadT = 0; cs.ammo = cst.mag; sfx.reloadDone(); }
     updateAmmoHud();
   }
@@ -265,7 +296,7 @@ export function updatePlayer(dt) {
       p.fireCd = cst.fireInterval;
       const mm = playerMuzzle();
       const sp = (Math.random() - 0.5) * cst.spread;
-      spawnBullet('p', 'player', mm.x, mm.z, Math.sin(actA + sp), Math.cos(actA + sp), cst.speed, cst.range, cst.damage, cst);
+      spawnBullet('p', 'player', mm.x, mm.z, Math.sin(actA + sp), Math.cos(actA + sp), cst.speed, cst.range, cst.damage * (p.buffs.power > 0 ? 1.5 : 1), cst);
       muzzleFlash(mm.x, GUN_Y, mm.z, 0xffc040);
       G.muzzleGlow = 0.07;
       p.lastShot = G.now;
@@ -308,6 +339,19 @@ export function updatePlayer(dt) {
 export function hurtPlayer(dx, dz) {
   const p = player;
   if (!p.alive || p.inv > 0 || p.rollI > 0) return;
+  // 護甲先吃掉這一下：一樣有無敵時間和擊退，但不扣命
+  if (p.armor > 0) {
+    p.armor--;
+    p.inv = 1.0;
+    p.vx += dx * 7; p.vz += dz * 7;
+    sparks(p.x, 1, p.z, 0xc8d4e8, 14);
+    burst(p.x, 1, p.z, [0x9aa8bc, 0x6a7484], 6, 3);
+    G.hitStop = Math.max(G.hitStop, 0.08);
+    addTrauma(0.4);
+    sfx.armor?.();
+    updateHud();
+    return;
+  }
   p.hits++;
   p.inv = 1.0;
   p.vx += dx * 9; p.vz += dz * 9;

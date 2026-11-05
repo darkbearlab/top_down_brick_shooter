@@ -7,6 +7,7 @@ import { CAM_PITCH, FLASH_GEO, G, GUN_Y, UNIT_BOX, WALL_H, WOOD, addMat, addTrau
 import { burst, freeBar, fx, makeBar, setBar, sparks, voxelBurst } from './fx.js';
 import { player, resetPlayer } from './player.js';
 import { alertNoise, enemies, spawnEnemy } from './enemies.js';
+import { initItems } from './items.js';
 import { addSwingDoor, collideSwings, raySwings, swingClosedAt } from './swingdoors.js';
 import { clearEntities, leaveLabel, leaveLevel, retryLevel, showPanel, showToast, updateHud } from './main.js';
 
@@ -628,6 +629,20 @@ export function updateWaves(dt) {
   w.left--;
   spawnWave(w);
 }
+// 離玩家 minD～maxD 格（沿著走得到的路算）的一格空地；找不到回傳 null
+export function randomFloorSpot(minD, maxD) {
+  const f = soundField(player.x, player.z, maxD + 2);
+  const spots = [];
+  for (let r = 1; r < H - 1; r++) for (let c = 1; c < W - 1; c++) {
+    const d = f[c + r * W];
+    if (d < minD || d > maxD || isSolidTile(c, r) || level.cells.has(c + r * W) || 'dDV'.includes(level.grid[r][c])) continue;
+    spots.push([c, r]);
+  }
+  if (!spots.length) return null;
+  const [c, r] = spots[Math.floor(Math.random() * spots.length)];
+  return { c, r, x: toWorldX(c), z: toWorldZ(r) };
+}
+
 function spawnWave(w) {
   const f = soundField(player.x, player.z, 16);
   const spots = [];
@@ -904,6 +919,7 @@ export function loadLevel(mode, index) {
   buildFlow();
   if (level.goal === 'hold' && def.wave) startSpawner(def.wave);
   // 增援：場上快清光時，下一波從地板組裝出來
+  initItems(def);
   level.waves = def.waves ? { ...def.waves, left: def.waves.count, total: def.waves.count, armor: def.armor ?? 0, t: -1, timer: 0 } : null;
   updateLamps(0);
   G.slowMo = 0; G.hitStop = 0;

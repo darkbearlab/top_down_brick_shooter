@@ -3,6 +3,7 @@ import { BREACH_LEVELS, DARK_LEVELS } from './rooms.js';
 import { setHand } from './models.js';
 import { loadLoadout, openLoadout } from './loadout.js';
 import { endRunGear, showRewards, startRun } from './run.js';
+import { updateItems } from './items.js';
 import { CUSTOM_LEVELS } from './custom_levels.js';
 import { openEditor } from './editor.js';
 import { openMissionSetup, playRandom } from './missionsetup.js';
@@ -82,6 +83,7 @@ export function retryLevel() {
 
 export function startGame(mode, index) {
   if (mode !== 'run') endRunGear();
+  player.armor = 0;
   $('previewBar').classList.add('hidden');
   $('editor').classList.add('hidden');
   menuEl.classList.add('hidden');
@@ -97,6 +99,11 @@ export function updateHud() {
   for (let i = 0; i < MAX_HITS; i++) {
     const d = document.createElement('div');
     d.className = 'pip' + (i < player.hits ? ' lost' : '');
+    el.appendChild(d);
+  }
+  for (let i = 0; i < player.armor; i++) {
+    const d = document.createElement('div');
+    d.className = 'pip armor';
     el.appendChild(d);
   }
   updateAmmoHud();
@@ -160,11 +167,11 @@ export const HELP_HTML = `<div class="keys">
 左半邊拖曳：移動<br>
 右半邊拖曳：雷射瞄準，推過虛線圈：開火<br>
 右半邊快速點一下：換彈<br>
-右下角「滾」按鈕：翻滾閃避<br>
+右側「滾」按鈕：翻滾閃避（有冷卻，按鈕變暗時不能滾）<br>
 左上角 ⇄ 按鈕：切換武器<br><br>
 <b>電腦</b><br>
 WASD 移動・滑鼠瞄準・左鍵開火<br>
-Shift 或右鍵 翻滾閃避（翻滾前段無敵）<br>
+空白鍵、Shift 或右鍵 翻滾閃避（翻滾前段無敵，之後冷卻約 0.75 秒，腳下的圈縮完就能再滾）<br>
 R 換彈・滾輪或 1 / 2 切換武器<br>Q 左手持槍・E 右手持槍・Esc 暫停<br><br>
 <b>敵人的子彈</b><br>
 敵人打的是看得到的慢速彈丸，用走位和翻滾閃過去<br>
@@ -323,6 +330,7 @@ export function frame(t) {
     updateSwingDoors(dt);
     updateGates(dt);
     updateSpawner(dt);
+    updateItems(dt);
     updateObjectives(dt);
   }
   if (dt > 0) updateParticles(dt);

@@ -8,6 +8,7 @@ import { BODY_LIGHT_R, FLASH_ANGLE, FLASH_RANGE, G, GUN_Y, addMat, addTrauma, de
 import { burst, freeBar, freeLaser, makeBar, makeLaser, muzzleFlash, setBar, setLaser, showMarker, sparks, voxelBurst } from './fx.js';
 import { H, LAMP_R, W, bangDoor, castRay, collide, destroyDoor, doorAt, findCoverPath, hasLOS, level, navDir, rayCircle, seekDir, smashArea, soundField, tileC, tileR, zflow } from './world.js';
 import { spawnBullet, spawnPellet } from './bullets.js';
+import { maybeDrop } from './items.js';
 import { hurtPlayer, muzzleOf, player } from './player.js';
 
 // ---------- 敵人 ----------
@@ -247,6 +248,7 @@ export function killEnemy(e, dx, dz) {
   const i = enemies.indexOf(e);
   if (i < 0) return;
   enemies.splice(i, 1);
+  maybeDrop(e);
   voxelBurst(e.man.root, Math.round(45 * e.def.scale ** 1.5), 4, dx * 4, dz * 4);   // 身上的方塊往子彈方向噴
   freeEnemy(e);
   sparks(e.x, 1, e.z, 0xffd060, 12);

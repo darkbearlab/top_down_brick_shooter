@@ -53,6 +53,7 @@ export const sfx = {
   assemble() { tone('sine', 180, 720, 1.3, 0.06); noise(1.2, 0.06, 2400, 3); },
   assembleDone() { tone('square', 700, 200, 0.12, 0.12); noise(0.15, 0.3, 1200, 0.8); },
   armor() { tone('triangle', 1800, 1500, 0.05, 0.08); noise(0.03, 0.12, 6000, 3); },
+  pickup() { tone('triangle', 500, 1200, 0.15, 0.15); tone('sine', 900, 1800, 0.12, 0.08); },
   roll() { noise(0.12, 0.18, 900, 0.5); tone('sine', 300, 150, 0.1, 0.04); },
   lunge() { tone('square', 120, 260, 0.15, 0.08); },
   door() { tone('triangle', 400, 900, 0.35, 0.2); },

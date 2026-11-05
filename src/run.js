@@ -27,6 +27,15 @@ function mapDef(depth) {
     maxAlive: Math.min(9, 4 + depth),
     types: WAVE_TYPES,
   };
+  // 地圖道具：計時 buff 會在原地再出現一次；護甲 / 急救包只出現一次
+  const timed = ['speed', 'power', 'quick'];
+  const pickT = () => timed[Math.floor(Math.random() * timed.length)];
+  def.items = [
+    { kind: pickT(), at: 8 + Math.random() * 6 },
+    { kind: pickT(), at: 30 + Math.random() * 15 },
+  ];
+  if (depth >= 2 && Math.random() < 0.6) def.items.push({ kind: Math.random() < 0.5 ? 'armor' : 'heal', at: 20 + Math.random() * 20 });
+  def.drops = 0.08;   // 每個敵人死掉有 8% 掉道具
   def.name = `第 ${depth} 層`;
   return def;
 }
@@ -34,6 +43,7 @@ function mapDef(depth) {
 export function startRun() {
   RUN.active = true;
   RUN.depth = 1;
+  player.armor = 0;
   equipLoadout([{ ...START_GUN }]);
   setRunLevel(mapDef(1));
   startGame('run', 0);
