@@ -2,7 +2,7 @@
 // 從一把手槍開始；每張圖清完（含增援）後三選一：撿槍、回血…（之後可以再加別的獎勵，各自有權重）
 // 最多帶兩把槍，撿到新槍要選放哪一欄，被換掉的那把就沒了；死了這一局就結束
 import { MAX_HITS } from './core.js';
-import { generateLevel } from './generator.js';
+import { generateArena } from './generator.js';
 import { loadLoadout } from './loadout.js';
 import { CALIBERS, PERKS, RARITY, computeStats, randomBuild } from './weapons.js';
 import { loadLevel, setRunLevel } from './world.js';
@@ -14,13 +14,19 @@ const START_GUN = { caliber: '9mm', receiver: 'pistol', stock: 'none', mag: 'std
 // 增援會出現的敵人與權重
 const WAVE_TYPES = [['R', 0.24], ['S', 0.4], ['F', 0.12], ['H', 0.07], ['C', 0.05], ['A', 0.12]];
 
+// 開放場地 + 多波增援：一波人不多，但從不同方向來；場上快清光或過了 every 秒就來下一波（場上人數有上限）
 function mapDef(depth) {
-  const size = depth <= 2 ? 'S' : depth <= 5 ? 'M' : 'L';
-  const def = generateLevel({ size, enemies: depth <= 2 ? 'few' : 'normal', goals: ['clear'], env: 'lit' });
+  const def = generateArena({ depth });
   def.zoom = 1.3;
   // 第一層手上只有手槍，先不出防彈衣
   def.armor = depth <= 1 ? 0 : Math.min(0.4, (depth - 1) * 0.07);
-  def.waves = { count: depth <= 1 ? 1 : depth <= 4 ? 2 : 3, size: Math.min(6, 2 + Math.ceil(depth / 2)), types: WAVE_TYPES };
+  def.waves = {
+    count: Math.min(7, 3 + Math.floor(depth / 2)),
+    size: Math.min(5, 2 + Math.floor(depth / 3)),
+    every: Math.max(9, 16 - depth),
+    maxAlive: Math.min(9, 4 + depth),
+    types: WAVE_TYPES,
+  };
   def.name = `第 ${depth} 層`;
   return def;
 }

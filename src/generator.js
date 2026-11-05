@@ -312,3 +312,52 @@ export function generateLevel(opts) {
   def.name = `${S.name}・${GEN_GOALS[goal]}${dark ? '・黑暗' : ''}　#${seed}`;
   return def;
 }
+
+// ---------- 闖關用的開放場地 ----------
+// 大片空地，零散的掩體（沙包、柱子、短牆、磚牆）彼此至少隔一格、也不貼外牆，所以不會圍出死角
+// 敵人主要靠增援（world.js 的 waves），一開始只放很少或不放
+// opts: { depth, seed }
+export function generateArena(opts) {
+  const seed = opts.seed ?? Math.floor(Math.random() * 1e6);
+  const rnd = mulberry32(seed);
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const depth = opts.depth ?? 1;
+  const W = 21 + 2 * Math.min(3, Math.floor(depth / 2)), H = W + 6;
+  const g = Array.from({ length: H }, (_, r) => Array.from({ length: W }, (_, c) => (r === 0 || c === 0 || r === H - 1 || c === W - 1) ? '#' : '.'));
+  const mid = Math.floor(W / 2);
+  for (let c = mid - 1; c <= mid + 1; c++) g[0][c] = 'D';
+  // 玩家在中間偏下：四面八方都可能來敵人
+  const pc = mid, pr = Math.floor(H / 2) + 2;
+  g[pr][pc] = 'P';
+
+  // 這些格子跟它們的一圈鄰居都要是空地、離外牆至少 2 格、離玩家至少 3 格
+  const free = cells => cells.every(([c, r]) => {
+    if (c < 2 || r < 2 || c > W - 3 || r > H - 3 || Math.hypot(c - pc, r - pr) < 3.5) return false;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (g[r + dr][c + dc] !== '.') return false;
+    return true;
+  });
+  const floor = (W - 2) * (H - 2);
+  const n = Math.round(floor / ri(34, 44));
+  for (let k = 0, placed = 0; k < n * 20 && placed < n; k++) {
+    const c = ri(2, W - 3), r = ri(2, H - 3), v = rnd(), hz = rnd() < 0.5;
+    let cells, ch;
+    if (v < 0.5) { const len = ri(2, 4); cells = Array.from({ length: len }, (_, i) => hz ? [c + i, r] : [c, r + i]); ch = 'h'; }
+    else if (v < 0.68) { cells = rnd() < 0.6 ? [[c, r]] : [[c, r], [c + 1, r], [c, r + 1], [c + 1, r + 1]]; ch = '#'; }
+    else if (v < 0.8) { cells = Array.from({ length: 3 }, (_, i) => hz ? [c + i, r] : [c, r + i]); ch = '#'; }
+    else { cells = [[c, r], hz ? [c + 1, r] : [c, r + 1]]; ch = 'W'; }
+    if (!free(cells)) continue;
+    for (const [cc, rr] of cells) g[rr][cc] = ch;
+    placed++;
+  }
+
+  // 開場只放很少的敵人（第 1 層不放），離玩家遠一點
+  const start = depth <= 1 ? 0 : Math.min(3, Math.floor((depth + 1) / 3));
+  const types = ['S', 'S', 'R', 'A'];
+  for (let k = 0, placed = 0; k < 400 && placed < start; k++) {
+    const c = ri(2, W - 3), r = ri(1, H - 3);
+    if (g[r][c] !== '.' || Math.hypot(c - pc, r - pr) < 9) continue;
+    g[r][c] = types[Math.floor(rnd() * types.length)];
+    placed++;
+  }
+  return { map: g.map(row => row.join('')), goal: 'clear', seed };
+}

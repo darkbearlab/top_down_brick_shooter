@@ -612,16 +612,19 @@ export function updateSpawner(dt) {
 }
 
 // ---------- 增援波 ----------
-// 場上剩 ≤ 1 個敵人時，過一下就從玩家附近（走得到、5～12 格遠）的地板組裝出下一波
+// 下一波的時機：場上剩 ≤ 1 個敵人過一下；或設了 every 秒、時間到而且場上人數加這波不超過 maxAlive
+// 出現在玩家附近（走得到、5～12 格遠）的地板，同一波盡量分散在不同方向
 // 一波裡會打散射類彈幕的（散射兵、重砲手、環砲手）最多一個，避免畫面子彈太多
 const SPRAY = 'FHC';
 export function updateWaves(dt) {
   const w = level.waves;
   if (!w || w.left <= 0 || G.state !== 'play') return;
-  if (enemies.length > 1) { w.t = 0; return; }
+  w.timer += dt;
+  const timed = w.every && w.timer >= w.every && enemies.length + w.size <= (w.maxAlive ?? 99);
+  if (enemies.length > 1 && !timed) { w.t = Math.min(w.t, 0); return; }
   w.t += dt;
-  if (w.t < (enemies.length ? 1.6 : 0.8)) return;
-  w.t = 0;
+  if (!timed && w.t < (enemies.length ? 1.6 : 0.8)) return;
+  w.t = 0; w.timer = 0;
   w.left--;
   spawnWave(w);
 }
@@ -646,12 +649,17 @@ function spawnWave(w) {
     }
     return 'S';
   };
-  for (const [c, r] of spots) {
-    if (used.length >= w.size) break;
-    const x = toWorldX(c), z = toWorldZ(r);
-    if (used.some(([ux, uz]) => Math.hypot(ux - x, uz - z) < 2.2)) continue;
-    used.push([x, z]);
-    spawnEnemy(pickType(), x, z, 0, true, { assemble: true, armored: Math.random() < w.armor });
+  // 分散方向：同一波的兩個人，從玩家看過去的角度至少差 minA（放不下就慢慢放寬）
+  const ang = (x, z) => Math.atan2(x - player.x, z - player.z);
+  for (let minA = Math.PI * 2 / (w.size + 1); used.length < w.size && minA > 0.05; minA *= 0.6) {
+    for (const [c, r] of spots) {
+      if (used.length >= w.size) break;
+      const x = toWorldX(c), z = toWorldZ(r), a = ang(x, z);
+      if (used.some(([ux, uz]) => Math.hypot(ux - x, uz - z) < 2.2)) continue;
+      if (used.some(([ux, uz]) => Math.abs(Math.atan2(Math.sin(a - ang(ux, uz)), Math.cos(a - ang(ux, uz)))) < minA)) continue;
+      used.push([x, z]);
+      spawnEnemy(pickType(), x, z, 0, true, { assemble: true, armored: Math.random() < w.armor });
+    }
   }
   if (used.length) showToast(`增援 ${w.total - w.left}/${w.total}`, '');
 }
@@ -896,7 +904,7 @@ export function loadLevel(mode, index) {
   buildFlow();
   if (level.goal === 'hold' && def.wave) startSpawner(def.wave);
   // 增援：場上快清光時，下一波從地板組裝出來
-  level.waves = def.waves ? { left: def.waves.count, size: def.waves.size, types: def.waves.types, armor: def.armor ?? 0, t: 0, total: def.waves.count } : null;
+  level.waves = def.waves ? { ...def.waves, left: def.waves.count, total: def.waves.count, armor: def.armor ?? 0, t: -1, timer: 0 } : null;
   updateLamps(0);
   G.slowMo = 0; G.hitStop = 0;
   G.state = 'play';
